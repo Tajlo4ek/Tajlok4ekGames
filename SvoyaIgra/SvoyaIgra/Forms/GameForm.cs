@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using SvoyaIgra.Extensions;
 using SvoyaIgra.Utils.Controllers;
+using SvoyaIgra.Utils;
 
 namespace SvoyaIgra.Forms
 {
@@ -18,7 +19,7 @@ namespace SvoyaIgra.Forms
         private readonly UserEditControl userEditControl;
 
         public Action<int, int> OnMouseMoveAction;
-        public Action<int, int> OnMouseClickAction;
+        public Action<Point, MouseButtons> OnMouseClickAction;
 
         public delegate bool StartStopDelegate(bool forse);
         public StartStopDelegate StartStopAction;
@@ -32,6 +33,11 @@ namespace SvoyaIgra.Forms
         public Action<string> OnConfigUserMoney;
         public Action OnCloseAction;
         public Action<string> SetChoiceUser;
+        public Action<ChoiceRect, GameController.SkipType> OnSkipClick;
+
+        private ChoiceRect lastChoiceRect = null;
+        private bool skipNextClick = false;
+
         public Action<int> AuctionMove
         {
             get { return auctionControl.AuctionMove; }
@@ -560,6 +566,13 @@ namespace SvoyaIgra.Forms
             }));
         }
 
+        public void OnQuestionForDeleteClick(ChoiceRect question, Point location)
+        {
+            lastChoiceRect = question;
+            deleteQuestionMenu.Show(pbRoundData, location);
+            skipNextClick = true;
+        }
+
         private void GameForm_SizeChanged(object sender, EventArgs e)
         {
             sizeController.ResizeAll(this.Size);
@@ -576,7 +589,10 @@ namespace SvoyaIgra.Forms
 
         private void PbRoundData_MouseDown(object sender, MouseEventArgs e)
         {
-            OnMouseClickAction(e.X, e.Y);
+            if (skipNextClick) { skipNextClick = false; return; }
+
+            OnMouseMoveAction(e.X, e.Y);
+            OnMouseClickAction(e.Location, e.Button);
         }
 
         private void PbRoundData_MouseMove(object sender, MouseEventArgs e)
@@ -954,7 +970,23 @@ namespace SvoyaIgra.Forms
             }
         }
 
+        private void DelQuestionMenuItem_Click(object sender, EventArgs e)
+        {
+            OnSkipClick?.Invoke(lastChoiceRect, GameController.SkipType.Question);
+            skipNextClick = false;
+        }
 
+        private void DelThemeMenuItem_Click(object sender, EventArgs e)
+        {
+            OnSkipClick?.Invoke(lastChoiceRect, GameController.SkipType.Theme);
+            skipNextClick = false;
+        }
+
+        private void DelRoundMenuItem_Click(object sender, EventArgs e)
+        {
+            OnSkipClick?.Invoke(lastChoiceRect, GameController.SkipType.Round);
+            skipNextClick = false;
+        }
     }
 }
 

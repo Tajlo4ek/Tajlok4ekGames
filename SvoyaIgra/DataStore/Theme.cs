@@ -44,6 +44,14 @@ namespace DataStore
             }
         }
 
+        public void SetEnd()
+        {
+            foreach (var q in this.questions)
+            {
+                q.SetEnd();
+            }
+        }
+
         public void SetUsed()
         {
             IsUsed = true;

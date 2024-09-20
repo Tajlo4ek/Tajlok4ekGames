@@ -33,6 +33,10 @@
             this.mediaTimer = new System.Windows.Forms.Timer(this.components);
             this.imagePlayer = new System.Windows.Forms.PictureBox();
             this.pbRoundData = new System.Windows.Forms.PictureBox();
+            this.userConfigMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
+            this.kickToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.configMoneyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.setChoiseToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.moveTimer = new System.Windows.Forms.Timer(this.components);
             this.rtbChat = new System.Windows.Forms.RichTextBox();
             this.tlpPlayers = new System.Windows.Forms.TableLayoutPanel();
@@ -50,13 +54,14 @@
             this.pbAdminImage = new System.Windows.Forms.PictureBox();
             this.pbAdminName = new System.Windows.Forms.PictureBox();
             this.pbProgressBar = new System.Windows.Forms.PictureBox();
-            this.userConfigMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
-            this.kickToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.configMoneyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.setChoiseToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.videoPlayer = new AxWMPLib.AxWindowsMediaPlayer();
+            this.deleteQuestionMenu = new System.Windows.Forms.ContextMenuStrip(this.components);
+            this.delQuestionMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.delThemeMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.delRoundMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             ((System.ComponentModel.ISupportInitialize)(this.imagePlayer)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.pbRoundData)).BeginInit();
+            this.userConfigMenu.SuspendLayout();
             this.adminPanel.SuspendLayout();
             this.tlpAns.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pbAnswer)).BeginInit();
@@ -64,8 +69,8 @@
             ((System.ComponentModel.ISupportInitialize)(this.pbAdminImage)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.pbAdminName)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.pbProgressBar)).BeginInit();
-            this.userConfigMenu.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.videoPlayer)).BeginInit();
+            this.deleteQuestionMenu.SuspendLayout();
             this.SuspendLayout();
             // 
             // mediaTimer
@@ -99,6 +104,36 @@
             this.pbRoundData.MouseDown += new System.Windows.Forms.MouseEventHandler(this.PbRoundData_MouseDown);
             this.pbRoundData.MouseLeave += new System.EventHandler(this.PbRoundData_MouseLeave);
             this.pbRoundData.MouseMove += new System.Windows.Forms.MouseEventHandler(this.PbRoundData_MouseMove);
+            // 
+            // userConfigMenu
+            // 
+            this.userConfigMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.kickToolStripMenuItem,
+            this.configMoneyToolStripMenuItem,
+            this.setChoiseToolStripMenuItem});
+            this.userConfigMenu.Name = "userConfigMenu";
+            this.userConfigMenu.Size = new System.Drawing.Size(151, 70);
+            // 
+            // kickToolStripMenuItem
+            // 
+            this.kickToolStripMenuItem.Name = "kickToolStripMenuItem";
+            this.kickToolStripMenuItem.Size = new System.Drawing.Size(150, 22);
+            this.kickToolStripMenuItem.Text = "kick";
+            this.kickToolStripMenuItem.Click += new System.EventHandler(this.KickToolStripMenuItem_Click);
+            // 
+            // configMoneyToolStripMenuItem
+            // 
+            this.configMoneyToolStripMenuItem.Name = "configMoneyToolStripMenuItem";
+            this.configMoneyToolStripMenuItem.Size = new System.Drawing.Size(150, 22);
+            this.configMoneyToolStripMenuItem.Text = "Config Money";
+            this.configMoneyToolStripMenuItem.Click += new System.EventHandler(this.ConfigMoneyToolStripMenuItem_Click);
+            // 
+            // setChoiseToolStripMenuItem
+            // 
+            this.setChoiseToolStripMenuItem.Name = "setChoiseToolStripMenuItem";
+            this.setChoiseToolStripMenuItem.Size = new System.Drawing.Size(150, 22);
+            this.setChoiseToolStripMenuItem.Text = "Set choice";
+            this.setChoiseToolStripMenuItem.Click += new System.EventHandler(this.SetChoiseToolStripMenuItem_Click);
             // 
             // rtbChat
             // 
@@ -297,36 +332,6 @@
             this.pbProgressBar.TabStop = false;
             this.pbProgressBar.Visible = false;
             // 
-            // userConfigMenu
-            // 
-            this.userConfigMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.kickToolStripMenuItem,
-            this.configMoneyToolStripMenuItem,
-            this.setChoiseToolStripMenuItem});
-            this.userConfigMenu.Name = "userConfigMenu";
-            this.userConfigMenu.Size = new System.Drawing.Size(151, 70);
-            // 
-            // kickToolStripMenuItem
-            // 
-            this.kickToolStripMenuItem.Name = "kickToolStripMenuItem";
-            this.kickToolStripMenuItem.Size = new System.Drawing.Size(150, 22);
-            this.kickToolStripMenuItem.Text = "kick";
-            this.kickToolStripMenuItem.Click += new System.EventHandler(this.KickToolStripMenuItem_Click);
-            // 
-            // configMoneyToolStripMenuItem
-            // 
-            this.configMoneyToolStripMenuItem.Name = "configMoneyToolStripMenuItem";
-            this.configMoneyToolStripMenuItem.Size = new System.Drawing.Size(150, 22);
-            this.configMoneyToolStripMenuItem.Text = "Config Money";
-            this.configMoneyToolStripMenuItem.Click += new System.EventHandler(this.ConfigMoneyToolStripMenuItem_Click);
-            // 
-            // setChoiseToolStripMenuItem
-            // 
-            this.setChoiseToolStripMenuItem.Name = "setChoiseToolStripMenuItem";
-            this.setChoiseToolStripMenuItem.Size = new System.Drawing.Size(150, 22);
-            this.setChoiseToolStripMenuItem.Text = "Set choice";
-            this.setChoiseToolStripMenuItem.Click += new System.EventHandler(this.SetChoiseToolStripMenuItem_Click);
-            // 
             // videoPlayer
             // 
             this.videoPlayer.Enabled = true;
@@ -335,6 +340,36 @@
             this.videoPlayer.OcxState = ((System.Windows.Forms.AxHost.State)(resources.GetObject("videoPlayer.OcxState")));
             this.videoPlayer.Size = new System.Drawing.Size(500, 300);
             this.videoPlayer.TabIndex = 2;
+            // 
+            // deleteQuestionMenu
+            // 
+            this.deleteQuestionMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.delQuestionMenuItem,
+            this.delThemeMenuItem,
+            this.delRoundMenuItem});
+            this.deleteQuestionMenu.Name = "deleteQuestionMenu";
+            this.deleteQuestionMenu.Size = new System.Drawing.Size(181, 92);
+            // 
+            // delQuestionMenuItem
+            // 
+            this.delQuestionMenuItem.Name = "delQuestionMenuItem";
+            this.delQuestionMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.delQuestionMenuItem.Text = "Удалить вопрос";
+            this.delQuestionMenuItem.Click += new System.EventHandler(this.DelQuestionMenuItem_Click);
+            // 
+            // delThemeMenuItem
+            // 
+            this.delThemeMenuItem.Name = "delThemeMenuItem";
+            this.delThemeMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.delThemeMenuItem.Text = "Удалить тему";
+            this.delThemeMenuItem.Click += new System.EventHandler(this.DelThemeMenuItem_Click);
+            // 
+            // delRoundMenuItem
+            // 
+            this.delRoundMenuItem.Name = "delRoundMenuItem";
+            this.delRoundMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.delRoundMenuItem.Text = "Пропустить раунд";
+            this.delRoundMenuItem.Click += new System.EventHandler(this.DelRoundMenuItem_Click);
             // 
             // GameForm
             // 
@@ -364,6 +399,7 @@
             this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.GameForm_KeyDown);
             ((System.ComponentModel.ISupportInitialize)(this.imagePlayer)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.pbRoundData)).EndInit();
+            this.userConfigMenu.ResumeLayout(false);
             this.adminPanel.ResumeLayout(false);
             this.tlpAns.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.pbAnswer)).EndInit();
@@ -371,8 +407,8 @@
             ((System.ComponentModel.ISupportInitialize)(this.pbAdminImage)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.pbAdminName)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.pbProgressBar)).EndInit();
-            this.userConfigMenu.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.videoPlayer)).EndInit();
+            this.deleteQuestionMenu.ResumeLayout(false);
             this.ResumeLayout(false);
 
         }
@@ -403,5 +439,9 @@
         private System.Windows.Forms.ToolStripMenuItem configMoneyToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem setChoiseToolStripMenuItem;
         private System.Windows.Forms.Button btnAnsHalf;
+        private System.Windows.Forms.ContextMenuStrip deleteQuestionMenu;
+        private System.Windows.Forms.ToolStripMenuItem delQuestionMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem delThemeMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem delRoundMenuItem;
     }
 }

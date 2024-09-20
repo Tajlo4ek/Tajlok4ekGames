@@ -34,7 +34,7 @@ namespace SvoyaIgra.Data
             ForceShowQuestion,
             AuctionChoice,
             AddTextToMainScreen,
-            KickTheme,
+            FinalKickTheme,
             ChoiseTheme,
             FinalRate,
             FinalAnswer,

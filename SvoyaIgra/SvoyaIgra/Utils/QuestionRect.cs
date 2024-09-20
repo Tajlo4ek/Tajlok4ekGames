@@ -1,4 +1,5 @@
-﻿using System.Drawing;
+﻿using DataStore;
+using System.Drawing;
 
 namespace SvoyaIgra.Utils
 {
@@ -44,6 +45,10 @@ namespace SvoyaIgra.Utils
         public override int GetHashCode()
         {
             return ThemeId ^ QuestionId;
+        }
+        public override string ToString()
+        {
+            return "Item: t=" + ThemeId.ToString() + " q" + QuestionId.ToString();
         }
 
     }

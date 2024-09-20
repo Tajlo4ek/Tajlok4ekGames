@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Windows.Forms;
+using System.Windows.Input;
 using ClientServer;
 using DataStore;
 using SvoyaIgra.Data;
@@ -9,6 +11,13 @@ namespace SvoyaIgra.Utils.Controllers
 {
     public class GameController
     {
+        public enum SkipType
+        {
+            Theme,
+            Question,
+            Round
+        }
+
         public const int AuctionStep = 100;
 
 
@@ -102,6 +111,7 @@ namespace SvoyaIgra.Utils.Controllers
 
         private readonly MyQueue<string> userTokenQueue;
 
+
         public GameController(bool isServer, string ip, string name, string imgUrl, string packPath = null)
         {
             mainFont = new Font("Arial", 40, FontStyle.Regular, GraphicsUnit.Point);
@@ -124,6 +134,7 @@ namespace SvoyaIgra.Utils.Controllers
             gameForm.SetChoiceUser += SetChoiceUser;
             gameForm.AuctionMove += OnAuctionMove;
             gameForm.FinalAnsClick += FinalAnswer;
+            gameForm.OnSkipClick += SkipQuestion;
 
             gameForm.Show();
 
@@ -628,22 +639,7 @@ namespace SvoyaIgra.Utils.Controllers
                             package.GetRound(roundId).GetTheme(themeId).GetQuestion(questionId).SetEnd();
                         }
 
-                        endQCount = 0;
-
-                        var round = package.GetRound(nowRound);
-
-                        for (int i = 0; i < round.CountThemes; i++)
-                        {
-                            var theme = round.GetTheme(i);
-                            for (int j = 0; j < theme.CountQuestions; j++)
-                            {
-                                if (theme.GetQuestion(j).IsUsed)
-                                {
-                                    endQCount++;
-                                }
-                            }
-                        }
-
+                        endQCount = CalcUsedQuestion();
                         OnEndAct();
                     }
                     break;
@@ -900,7 +896,7 @@ namespace SvoyaIgra.Utils.Controllers
                     }
                     break;
 
-                case MessageTypes.MessageType.KickTheme:
+                case MessageTypes.MessageType.FinalKickTheme:
                     {
                         if (!(messageToken.Equals(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
                             || messageToken.Equals(userTokenQueue.Peek())))
@@ -964,7 +960,7 @@ namespace SvoyaIgra.Utils.Controllers
                             {
                                 var sendMessage = new ClientServer.Message<MessageTypes.MessageType>()
                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                   .SetCommand(MessageTypes.MessageType.KickTheme)
+                                   .SetCommand(MessageTypes.MessageType.FinalKickTheme)
                                    .Add("round", roundId.ToString())
                                    .Add("theme", themeId.ToString());
                                 AddMessageForAll(sendMessage);
@@ -1345,6 +1341,13 @@ namespace SvoyaIgra.Utils.Controllers
             return bmp;
         }
 
+        private void SkipRound()
+        {
+            nextState = State.ShowRoundName;
+            endQCount = 0;
+            nowRound++;
+        }
+
         private void OnEndAct()
         {
             switch (state)
@@ -1357,9 +1360,7 @@ namespace SvoyaIgra.Utils.Controllers
 
                         if (endQCount == package.GetRound(nowRound).CountQuestions)
                         {
-                            nextState = State.ShowRoundName;
-                            endQCount = 0;
-                            nowRound++;
+                            SkipRound();
 
                             if (nowRound < package.CountRounds)
                             {
@@ -1862,16 +1863,35 @@ namespace SvoyaIgra.Utils.Controllers
 
         }
 
-        private void OnRectClick(int x, int y)
+        private int CalcUsedQuestion()
+        {
+            int count = 0;
+            var round = package.GetRound(nowRound);
+
+            for (int i = 0; i < round.CountThemes; i++)
+            {
+                var theme = round.GetTheme(i);
+                for (int j = 0; j < theme.CountQuestions; j++)
+                {
+                    if (theme.GetQuestion(j).IsUsed)
+                    {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        private void OnRectClick(Point location, MouseButtons button)
         {
             if (state != State.ChoiseQuestion && state != State.ChoiseFinalTheme)
             {
                 return;
             }
 
-            var find = GetRectUnderMouse(x, y);
+            var lastClickedRect = GetRectUnderMouse(location.X, location.Y);
 
-            if (find == null)
+            if (lastClickedRect == null)
             {
                 return;
             }
@@ -1889,8 +1909,8 @@ namespace SvoyaIgra.Utils.Controllers
                         .SetToken(client.Token)
                         .SetCommand(MessageTypes.MessageType.ChoiseQuestion)
                         .Add("round", nowRound.ToString())
-                        .Add("theme", find.ThemeId.ToString())
-                        .Add("question", find.QuestionId.ToString());
+                        .Add("theme", lastClickedRect.ThemeId.ToString())
+                        .Add("question", lastClickedRect.QuestionId.ToString());
 
                     users[0].AddDataToSend(message);
                 }
@@ -1900,38 +1920,45 @@ namespace SvoyaIgra.Utils.Controllers
 
                     var message = new ClientServer.Message<MessageTypes.MessageType>()
                         .SetToken(client.Token)
-                        .SetCommand(MessageTypes.MessageType.KickTheme)
+                        .SetCommand(MessageTypes.MessageType.FinalKickTheme)
                         .Add("round", nowRound.ToString())
-                        .Add("theme", find.ThemeId.ToString());
+                        .Add("theme", lastClickedRect.ThemeId.ToString());
 
                     users[0].AddDataToSend(message);
                 }
             }
             else
             {
-                if (state == State.ChoiseQuestion)
+                if (button == MouseButtons.Left)
                 {
-                    userChoiseToken = "";
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                        .SetCommand(MessageTypes.MessageType.ShowQuestion)
-                        .Add("round", nowRound.ToString())
-                        .Add("theme", find.ThemeId.ToString())
-                        .Add("question", find.QuestionId.ToString());
-                    AddMessageForAll(message);
+                    if (state == State.ChoiseQuestion)
+                    {
+                        userChoiseToken = "";
+                        var message = new ClientServer.Message<MessageTypes.MessageType>()
+                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
+                            .SetCommand(MessageTypes.MessageType.ShowQuestion)
+                            .Add("round", nowRound.ToString())
+                            .Add("theme", lastClickedRect.ThemeId.ToString())
+                            .Add("question", lastClickedRect.QuestionId.ToString());
+                        AddMessageForAll(message);
 
-                    ShowQuestion(nowRound, find.ThemeId, find.QuestionId);
+                        ShowQuestion(nowRound, lastClickedRect.ThemeId, lastClickedRect.QuestionId);
+                    }
+                    else
+                    {
+                        userChoiseToken = "";
+                        var message = new ClientServer.Message<MessageTypes.MessageType>()
+                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
+                            .SetCommand(MessageTypes.MessageType.FinalKickTheme)
+                            .Add("round", nowRound.ToString())
+                            .Add("theme", lastClickedRect.ThemeId.ToString());
+
+                        AddMessageForAll(message);
+                    }
                 }
-                else
+                else if (button == MouseButtons.Right)
                 {
-                    userChoiseToken = "";
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                        .SetCommand(MessageTypes.MessageType.KickTheme)
-                        .Add("round", nowRound.ToString())
-                        .Add("theme", find.ThemeId.ToString());
-
-                    AddMessageForAll(message);
+                    gameForm.OnQuestionForDeleteClick(lastClickedRect, location);
                 }
             }
 
@@ -2348,7 +2375,7 @@ namespace SvoyaIgra.Utils.Controllers
             OnEndAct();
         }
 
-        private void SendRoundData(Data.User user)
+        private ClientServer.Message<MessageTypes.MessageType> BuildCurrentQuestionMessage()
         {
             var message = new ClientServer.Message<MessageTypes.MessageType>()
                 .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
@@ -2375,12 +2402,15 @@ namespace SvoyaIgra.Utils.Controllers
             }
 
             message.Add("count", count.ToString());
+            return message;
+        }
 
+        private void SendRoundData(Data.User user)
+        {
             lock (users)
             {
-                user.AddDataToSend(message);
+                user.AddDataToSend(BuildCurrentQuestionMessage());
             }
-
         }
 
         private Data.User GetUser(string token)
@@ -2441,6 +2471,7 @@ namespace SvoyaIgra.Utils.Controllers
 
         private void OnAuctionMove(int rate)
         {
+
             if (isServer)
                 return;
 
@@ -2594,5 +2625,25 @@ namespace SvoyaIgra.Utils.Controllers
 
         }
 
+        private void SkipQuestion(ChoiceRect questrion, SkipType type)
+        {
+            switch (type)
+            {
+                case SkipType.Theme:
+                    package.GetRound(nowRound).GetTheme(questrion.ThemeId).SetEnd();
+                    break;
+                case SkipType.Question:
+                    package.GetRound(nowRound).GetTheme(questrion.ThemeId).GetQuestion(questrion.QuestionId).SetEnd();
+                    break;
+                case SkipType.Round:
+                    SkipRound();
+                    break;
+            }
+
+            endQCount = CalcUsedQuestion();
+
+            AddMessageForAll(BuildCurrentQuestionMessage());
+            ForseShowMain();
+        }
     }
 }
