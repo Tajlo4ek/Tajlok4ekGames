@@ -1,4 +1,7 @@
-﻿using System;
+﻿
+// #define NEED_LOG
+
+using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -17,7 +20,9 @@ namespace ClientServer
         private readonly Socket sListener;
         private readonly IPEndPoint ipEndPoint;
 
+#if NEED_LOG
         private readonly StreamWriter outStream;
+#endif
 
         private string workPath;
 
@@ -39,8 +44,9 @@ namespace ClientServer
             ipEndPoint = new IPEndPoint(ipAddr, Utils.port);
 
             sListener = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-
+#if NEED_LOG
             outStream = new StreamWriter("server.log");
+#endif
 
             getMessageForUser += getMessage;
             onErrorAction += onError;
@@ -61,8 +67,10 @@ namespace ClientServer
         {
             sListener.Close();
             workThread.Abort();
+#if NEED_LOG
             outStream.Flush();
             outStream.Close();
+#endif
         }
 
         private Message<TUserCommand> CheckMessage(Message<TUserCommand> message, Socket socket)
@@ -207,7 +215,7 @@ namespace ClientServer
         private void Log(string data)
         {
             Console.WriteLine(data);
-
+#if NEED_LOG
             new Task(new Action(() =>
             {
                 lock (outStream)
@@ -221,7 +229,7 @@ namespace ClientServer
                     }
                 }
             })).Start();
-
+#endif
         }
 
     }

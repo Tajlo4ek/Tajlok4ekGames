@@ -1,4 +1,7 @@
-﻿using System;
+﻿
+// #define NEED_LOG
+
+using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -6,18 +9,21 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+
 namespace ClientServer
 {
     public class Client<TUserCommand>
     {
-        static int id = 0;
 
         public string Token { get; private set; }
         private readonly string name;
 
         private string workPath;
 
+#if NEED_LOG
+        static int id = 0;
         private readonly StreamWriter outStream;
+#endif
 
         public Action<Message<TUserCommand>> OnGetMessage;
 
@@ -46,9 +52,10 @@ namespace ClientServer
             this.name = name;
             this.onErrorAction += onError;
             Token = "";
-
+#if NEED_LOG
             outStream = new StreamWriter("client" + id + ".log");
             id++;
+#endif
         }
 
         public void Start()
@@ -61,11 +68,13 @@ namespace ClientServer
         public void Stop()
         {
             needStop = true;
+#if NEED_LOG
             if (!(outStream.BaseStream == null))
             {
                 outStream.Flush();
                 outStream.Close();
             }
+#endif
         }
 
         public void SetWorkPath(string path)
@@ -189,6 +198,7 @@ namespace ClientServer
 
         private void Log(string data)
         {
+#if NEED_LOG
             new Task(new Action(() =>
             {
                 lock (outStream)
@@ -202,6 +212,7 @@ namespace ClientServer
                     }
                 }
             })).Start();
+#endif
         }
 
     }
