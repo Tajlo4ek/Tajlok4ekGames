@@ -22,17 +22,23 @@ namespace SvoyaIgra.Controls
 
         private void BtnAuctionPass_Click(object sender, EventArgs e)
         {
-            AuctionMove(0);
+            SendResult(0);
         }
 
         private void BtnAuctionAllIn_Click(object sender, EventArgs e)
         {
-            AuctionMove(-1);
+            SendResult(-1);
         }
 
         private void BtnAuctionSet_Click(object sender, EventArgs e)
         {
-            AuctionMove(trBarAuctionRate.Value * step);
+            SendResult(trBarAuctionRate.Value * step);
+        }
+
+        private void SendResult(int res)
+        {
+            Visible = false;
+            AuctionMove(res);
         }
 
         private void TrBarAuctionRate_ValueChanged(object sender, EventArgs e)
