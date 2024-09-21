@@ -1,7 +1,7 @@
-﻿using System;
+﻿using DataStore;
+using System;
 using System.Windows;
 using System.Windows.Controls;
-using DataStore;
 
 namespace Editor.MyControl.DataControl
 {

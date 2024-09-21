@@ -2,22 +2,10 @@
 using DataStore.Utils.PackUtils;
 using Microsoft.Win32;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 using System.Windows.Threading;
-using TagLib;
-using TagLib.Mpeg;
 
 namespace Editor.MyControl.DataControl
 {
@@ -108,7 +96,7 @@ namespace Editor.MyControl.DataControl
             mediaElement.Dispatcher.Invoke(new Action(() => { mediaElement.Stop(); }));
 
             TagLib.File file = TagLib.File.Create(path);
-            var len = (int)Math.Ceiling(file.Properties.Duration.TotalMilliseconds / 1000);            
+            var len = (int)Math.Ceiling(file.Properties.Duration.TotalMilliseconds / 1000);
 
             if (len != 0)
             {

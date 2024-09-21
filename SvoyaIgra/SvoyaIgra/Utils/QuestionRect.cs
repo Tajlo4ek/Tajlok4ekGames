@@ -1,5 +1,4 @@
-﻿using DataStore;
-using System.Drawing;
+﻿using System.Drawing;
 
 namespace SvoyaIgra.Utils
 {

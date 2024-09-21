@@ -1,5 +1,4 @@
-﻿using SvoyaIgra.Controls;
-using System;
+﻿using System;
 using System.Windows.Forms;
 
 namespace SvoyaIgra.Utils

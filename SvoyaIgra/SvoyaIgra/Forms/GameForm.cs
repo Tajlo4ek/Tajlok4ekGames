@@ -1,11 +1,11 @@
 ﻿using SvoyaIgra.Controls;
+using SvoyaIgra.Extensions;
+using SvoyaIgra.Utils;
+using SvoyaIgra.Utils.Controllers;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
-using SvoyaIgra.Extensions;
-using SvoyaIgra.Utils.Controllers;
-using SvoyaIgra.Utils;
 
 namespace SvoyaIgra.Forms
 {

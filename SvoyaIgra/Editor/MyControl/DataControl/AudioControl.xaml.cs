@@ -1,11 +1,11 @@
-﻿using System;
+﻿using DataStore;
+using DataStore.Utils.PackUtils;
+using Microsoft.Win32;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using DataStore;
-using DataStore.Utils.PackUtils;
-using Microsoft.Win32;
 using TagLib.Mpeg;
 
 namespace Editor.MyControl.DataControl

@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace SvoyaIgra.Data
+﻿namespace SvoyaIgra.Data
 {
     public class MessageTypes
     {
@@ -41,7 +35,8 @@ namespace SvoyaIgra.Data
             EndGame,
         }
 
-        public enum FileType {
+        public enum FileType
+        {
             Pack,
             AdminImg,
             UserImg

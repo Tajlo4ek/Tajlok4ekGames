@@ -1,7 +1,7 @@
-﻿using System;
+﻿using DataStore;
+using System;
 using System.Collections.Generic;
 using System.Windows.Controls;
-using DataStore;
 
 namespace Editor.MyControl
 {
@@ -106,7 +106,7 @@ namespace Editor.MyControl
         public void ParsePack(string packPath, Action<string> process = null)
         {
             IsSaved = true;
-            blockCallBack = true;            
+            blockCallBack = true;
 
             process?.Invoke("start load");
 

@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Windows.Forms;
-using DataStore;
 
 namespace SvoyaIgra.Data
 {

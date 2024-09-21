@@ -7,8 +7,10 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
+#if NEED_LOG
+using System.Threading.Tasks;
+#endif
 
 namespace ClientServer
 {
