@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DialogForm", "DialogForm\Di
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClientServer", "..\ClientServer\ClientServer\ClientServer.csproj", "{9ED6D5D9-2625-44D0-B6C1-0AFAC41CC6D2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Utils", "..\Utils\Utils\Utils.csproj", "{088AC919-64DC-4972-8101-DCD8B7806F06}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{9ED6D5D9-2625-44D0-B6C1-0AFAC41CC6D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9ED6D5D9-2625-44D0-B6C1-0AFAC41CC6D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9ED6D5D9-2625-44D0-B6C1-0AFAC41CC6D2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{088AC919-64DC-4972-8101-DCD8B7806F06}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{088AC919-64DC-4972-8101-DCD8B7806F06}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{088AC919-64DC-4972-8101-DCD8B7806F06}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{088AC919-64DC-4972-8101-DCD8B7806F06}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

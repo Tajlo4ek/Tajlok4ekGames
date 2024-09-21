@@ -1,16 +1,28 @@
 ﻿using System;
 using System.IO;
+using System.Runtime.Serialization;
 using System.Windows.Forms;
+using Tajlo4ekUtils;
 
 namespace SvoyaIgra.Forms
 {
     public partial class MainMenu : Form
     {
-        private readonly string ConfigPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\myGame\";
-
-        private const string ConfigName = @"config.cfg";
+        private static readonly string ConfigName = @"config";
 
         private static MainMenu instance;
+
+        private class ConfigData
+        {
+            [DataMember]
+            public string Name { get; set; }
+
+            [DataMember]
+            public string Ip { get; set; }
+
+            [DataMember]
+            public string Image { get; set; }
+        }
 
         public static void ShowMain()
         {
@@ -80,14 +92,11 @@ namespace SvoyaIgra.Forms
 
         private void MainMenu_Load(object sender, EventArgs e)
         {
-            if (File.Exists(ConfigPath + ConfigName))
+            if (ConfigSaver<ConfigData>.Load(ConfigName, out ConfigData configData))
             {
-                using (StreamReader sr = new StreamReader(ConfigPath + ConfigName))
-                {
-                    tbInputNick.Text = sr.ReadLine();
-                    tbInputIp.Text = sr.ReadLine();
-                    tbImg.Text = sr.ReadLine();
-                }
+                tbInputNick.Text = configData.Name;
+                tbInputIp.Text = configData.Ip;
+                tbImg.Text = configData.Image;
             }
             else
             {
@@ -96,32 +105,18 @@ namespace SvoyaIgra.Forms
                 tbImg.Text = "";
                 Save();
             }
-
-            if (!Directory.Exists(Application.StartupPath + @"\logs\server"))
-            {
-                Directory.CreateDirectory(Application.StartupPath + @"\logs\server");
-            }
-
-            if (!Directory.Exists(Application.StartupPath + @"\logs\client"))
-            {
-                Directory.CreateDirectory(Application.StartupPath + @"\logs\client");
-            }
         }
 
         private void Save()
         {
-            if (!Directory.Exists(ConfigPath))
-            {
-                Directory.CreateDirectory(ConfigPath);
-            }
-
-            using (StreamWriter sw = new StreamWriter(ConfigPath + ConfigName))
-            {
-                sw.WriteLine(tbInputNick.Text);
-                sw.WriteLine(tbInputIp.Text);
-                sw.WriteLine(tbImg.Text);
-            }
-
+            ConfigSaver<ConfigData>.Save(
+                ConfigName,
+                new ConfigData
+                {
+                    Name = tbInputNick.Text,
+                    Ip = tbInputIp.Text,
+                    Image = tbImg.Text
+                });
         }
 
         private void BtnSave_Click(object sender, EventArgs e)

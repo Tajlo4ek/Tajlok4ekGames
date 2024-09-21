@@ -186,6 +186,10 @@
       <Project>{9ed6d5d9-2625-44d0-b6c1-0afac41cc6d2}</Project>
       <Name>ClientServer</Name>
     </ProjectReference>
+    <ProjectReference Include="..\..\Utils\Utils\Utils.csproj">
+      <Project>{088ac919-64dc-4972-8101-dcd8b7806f06}</Project>
+      <Name>Utils</Name>
+    </ProjectReference>
     <ProjectReference Include="..\DataStore\DataStore.csproj">
       <Project>{c9ce2f42-b539-478c-b08b-1468bd678a9f}</Project>
       <Name>DataStore</Name>
