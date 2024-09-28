@@ -1,28 +1,35 @@
 ﻿using System;
 using System.IO;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Utils;
 
 namespace Tajlo4ekUtils
 {
 
-    public  class ConfigSaver<SaveObj>
+    public class ConfigSaver<SaveObj>
     {
-        private static readonly string ConfigPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\tajlo4ekGames\";
+        private static string DefaultConfigPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\tajlo4ekGames\";
 
+        public static void SetDefaultPath(string path)
+        {
+            if (path.EndsWith(Path.DirectorySeparatorChar.ToString()) == false)
+            {
+                path += Path.DirectorySeparatorChar;
+            }
+            DefaultConfigPath = path;
+        }
 
         public static bool Save(string name, SaveObj obj)
         {
             try
             {
-                if (!Directory.Exists(ConfigPath))
+                if (!Directory.Exists(DefaultConfigPath))
                 {
-                    Directory.CreateDirectory(ConfigPath);
+                    Directory.CreateDirectory(DefaultConfigPath);
                 }
 
-                var json = JsonSerializer.Serialize(obj, typeof(SaveObj));
+                var json = JsonUtils<SaveObj>.ToJson(obj, true);
 
-                using (StreamWriter sw = new StreamWriter(ConfigPath + name + ".json"))
+                using (StreamWriter sw = new StreamWriter(DefaultConfigPath + name + ".json"))
                 {
                     sw.Write(json);
                 }
@@ -43,7 +50,7 @@ namespace Tajlo4ekUtils
 
             try
             {
-                var fileName = ConfigPath + name + ".json";
+                var fileName = DefaultConfigPath + name + ".json";
 
                 if (File.Exists(fileName) != true) { return false; }
 
@@ -51,7 +58,7 @@ namespace Tajlo4ekUtils
                 using (StreamReader sr = new StreamReader(fileName))
                 {
                     var json = sr.ReadToEnd();
-                    obj = JsonSerializer.Deserialize<SaveObj>(json);
+                    obj = JsonUtils<SaveObj>.FromJson(json);
                 }
 
             }

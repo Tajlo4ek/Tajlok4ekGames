@@ -20,7 +20,9 @@ namespace ClientServer
 
             FileNotExists,
             FileRecived,
-            FileSended
+            FileSended,
+
+            Close
         }
 
         [JsonPropertyName("command")]
@@ -61,6 +63,11 @@ namespace ClientServer
         public static Message<TUserCommand> FromJson(string json)
         {
             return JsonSerializer.Deserialize<Message<TUserCommand>>(json);
+        }
+
+        public Message<TUserCommand> Add(string key, object value)
+        {
+            return Add(key, JsonSerializer.Serialize(value));
         }
 
         public Message<TUserCommand> Add(string key, string value)

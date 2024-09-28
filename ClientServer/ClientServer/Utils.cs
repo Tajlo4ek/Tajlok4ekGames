@@ -6,17 +6,15 @@ using System.Threading;
 
 namespace ClientServer
 {
-    static class Utils
+    public static class Utils
     {
-        public static readonly DateTime startTime = DateTime.Now;
+        private const int numCount = 10;
 
-        public const int numCount = 10;
-
-        public const int port = 35124;
+        public const int defaultPort = 35124;
 
         private const int maxPackageSize = 16384;
 
-        public static void WaitCount(Socket socket, int count, int timeout)
+        private static void WaitCount(Socket socket, int count, int timeout)
         {
             int time = 0;
 
@@ -30,7 +28,7 @@ namespace ClientServer
             }
         }
 
-        public static byte[] GetPackage(Socket socket, int timeout = 5000)
+        internal static byte[] GetPackage(Socket socket, int timeout = 5000)
         {
             WaitCount(socket, Utils.numCount, timeout);
             byte[] bytes = new byte[Utils.numCount];
@@ -44,7 +42,7 @@ namespace ClientServer
             return bytes;
         }
 
-        public static void SendPackage(Socket socket, string data)
+        internal static void SendPackage(Socket socket, string data)
         {
             var bytes = Encoding.UTF32.GetBytes(AddChar(data, Utils.numCount));
             socket.Send(Encoding.UTF8.GetBytes(AddChar(bytes.Length.ToString(), Utils.numCount)));
@@ -87,6 +85,12 @@ namespace ClientServer
 
             int proc = 0;
 
+            var dirName = Path.GetDirectoryName(path);
+            if (Directory.Exists(dirName) == false)
+            {
+                Directory.CreateDirectory(dirName);
+            }
+
             using (var file = new FileStream(path, FileMode.Create, FileAccess.Write))
             {
                 while (nowSize < lenght)
@@ -106,7 +110,7 @@ namespace ClientServer
             }
         }
 
-        public static long GetFileSize(string path)
+        internal static long GetFileSize(string path)
         {
             return new FileInfo(path).Length;
         }

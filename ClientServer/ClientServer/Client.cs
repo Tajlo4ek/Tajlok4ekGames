@@ -44,10 +44,10 @@ namespace ClientServer
         private bool needStop = false;
         private readonly Socket sender;
 
-        public Client(string ip, string name, Action<Exception> onError)
+        public Client(string ip, string name, Action<Exception> onError, int port = Utils.defaultPort)
         {
             var ipAddr = IPAddress.Parse(ip);
-            var ipEndPoint = new IPEndPoint(ipAddr, Utils.port);
+            var ipEndPoint = new IPEndPoint(ipAddr, port);
             sender = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             sender.Connect(ipEndPoint);
 
@@ -200,6 +200,8 @@ namespace ClientServer
 
         private void Log(string data)
         {
+            Console.WriteLine("recv:" + data);
+
 #if NEED_LOG
             new Task(new Action(() =>
             {

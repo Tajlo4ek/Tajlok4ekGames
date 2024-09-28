@@ -38,10 +38,10 @@ namespace ClientServer
         public delegate string GetFilePathDelegate(string name);
         public GetFilePathDelegate GetFilePath;
 
-        public Server(string ip, GetMessageDelegate getMessage, Action<Exception, string> onError)
+        public Server(string ip, GetMessageDelegate getMessage, Action<Exception, string> onError, int port = Utils.defaultPort)
         {
             var ipAddr = IPAddress.Parse(ip);
-            ipEndPoint = new IPEndPoint(ipAddr, Utils.port);
+            ipEndPoint = new IPEndPoint(ipAddr, port);
 
             sListener = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 #if NEED_LOG
@@ -156,8 +156,12 @@ namespace ClientServer
                 {
                     var bytes = Utils.GetPackage(handler);
                     string data = Encoding.UTF32.GetString(bytes);
-                    Log(data);
                     var messageFrom = Message<TUserCommand>.FromJson(data);
+
+                    if (messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.Ping)
+                    {
+                        Log(data);
+                    }
 
 
                     var reply = CheckMessage(messageFrom, handler);
@@ -181,16 +185,18 @@ namespace ClientServer
 
                         onGetMessage(ans);
                     }
-
-                    if (reply.MessageType == Message<TUserCommand>.GeneralMessageType.FileSended)
+                    else if (reply.MessageType == Message<TUserCommand>.GeneralMessageType.FileSended)
                     {
                         Thread.Sleep(250);
+                    }
+                    else if (reply.MessageType == Message<TUserCommand>.GeneralMessageType.Close)
+                    {
+                        throw new Exception("Close connetion");
                     }
 
                 }
                 catch (Exception ex)
                 {
-
                     handler.Shutdown(SocketShutdown.Both);
                     Log("error " + ex.ToString() + " \n" + ex.StackTrace);
                     onErrorAction(ex, token);
@@ -214,7 +220,7 @@ namespace ClientServer
 
         private void Log(string data)
         {
-            Console.WriteLine(data);
+            Console.WriteLine("recv: " + data);
 #if NEED_LOG
             new Task(new Action(() =>
             {
