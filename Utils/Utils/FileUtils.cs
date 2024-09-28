@@ -12,6 +12,11 @@ namespace Utils
         {
             public string Name { get; set; }
             public string Hash { get; set; }
+
+            public override string ToString()
+            {
+                return Name;
+            }
         }
 
         public static List<FileData> GetFileWithHash(string dirPath)

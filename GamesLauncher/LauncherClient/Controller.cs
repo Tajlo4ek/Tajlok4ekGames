@@ -163,6 +163,7 @@ namespace LauncherClient
             }
 
             int countNeedLoad = 0;
+            files.Remove(files.Find((file) => { return file.Name == Config.ConfigName + ".json"; }));
 
             foreach (var file in files)
             {
@@ -196,11 +197,10 @@ namespace LauncherClient
         }
         private void CheckNeedUpdateLauncher()
         {
-
-#if !DEBUG
+#if DEBUG
             bool needUpdate = false;
 
-            
+
             var updateDir = config.ProgramPath + Path.DirectorySeparatorChar + Config.LauncherName;
 
             var files = FileUtils.GetFileWithHash(updateDir);
