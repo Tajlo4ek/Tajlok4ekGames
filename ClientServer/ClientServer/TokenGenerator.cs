@@ -4,11 +4,16 @@ using System.Text;
 
 namespace ClientServer
 {
+    public interface IHasToken
+    {
+        string Token { get; }
+    }
+
     public static class TokenGenerator
     {
-        private static readonly List<string> userToken = new List<string>();
+        private static readonly List<string> usedToken = new List<string>();
 
-        public static string Generate(int size)
+        public static string Generate(int size = 20)
         {
             var charSet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
             string token;
@@ -29,9 +34,9 @@ namespace ClientServer
 
                 token = result.ToString();
             }
-            while (userToken.Contains(token));
+            while (usedToken.Contains(token));
 
-            userToken.Add(token);
+            usedToken.Add(token);
 
             return token;
         }

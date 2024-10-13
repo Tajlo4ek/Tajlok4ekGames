@@ -1,4 +1,5 @@
-﻿using LauncherServer;
+﻿using ClientServer.fileSend;
+using LauncherServer;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -65,16 +66,14 @@ namespace LauncherClient
             }));
         }
 
-        private void LoadProcess(string data)
+        private void LoadProcess(ProgressFileData data)
         {
             this.BeginInvoke(new Action(() =>
             {
-                bool process = data.IndexOf("%") != -1;
-                if (process == false)
+                if (data.State == ProgressFileData.States.End || data.State == ProgressFileData.States.Error)
                 {
                     coutReady++;
                 }
-
 
                 if (coutReady == counNeedLoad)
                 {

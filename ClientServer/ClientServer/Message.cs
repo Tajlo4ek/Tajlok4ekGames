@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -8,21 +9,23 @@ namespace ClientServer
     {
         public enum GeneralMessageType
         {
-            User,
+            User = 0,
 
-            Ping,
+            Ping = 1,
 
-            GetReg,
-            SendReg,
+            GetReg = 2,
+            SendReg = 3,
 
-            GetFile,
-            SendFile,
+            GetFile = 4,
+            SendFile = 5,
+            SendFilesProgress = 6,
+            RecvFilesProgress = 7,
 
-            FileNotExists,
-            FileRecived,
-            FileSended,
+            FileNotExists = 8,
+            FileRecived = 9,
+            FileSended = 10,
 
-            Close
+            Close = 11,
         }
 
         [JsonPropertyName("command")]
@@ -31,33 +34,36 @@ namespace ClientServer
         [JsonPropertyName("message")]
         public GeneralMessageType MessageType { get; set; }
 
-        [JsonPropertyName("token")]
-        public string Token { get; set; }
+        [JsonPropertyName("tokenFrom")]
+        public string TokenFrom { get; private set; }
+
+        [JsonPropertyName("tokenTo")]
+        public string TokenTo { get; private set; }
 
         [JsonPropertyName("data")]
         public Dictionary<string, string> Data { get; set; }
 
-        public Message() : this(GeneralMessageType.User)
+        [JsonConstructor]
+        public Message(string tokenFrom, string tokenTo) : this(tokenFrom, tokenTo, GeneralMessageType.User)
         {
-
         }
 
-        public Message(GeneralMessageType generalMessageType)
+        public Message(string tokenFrom, string tokenTo, GeneralMessageType generalMessageType)
         {
             this.MessageType = generalMessageType;
             Data = new Dictionary<string, string>();
-            this.Token = "";
+            this.TokenFrom = tokenFrom;
+            this.TokenTo = tokenTo;
+        }
+
+        public Message<TUserCommand> GetReply()
+        {
+            return new Message<TUserCommand>(TokenTo, TokenFrom);
         }
 
         public string GetJson()
         {
             return JsonSerializer.Serialize(this, typeof(Message<TUserCommand>));
-        }
-
-        public Message<TUserCommand> SetToken(string token)
-        {
-            this.Token = token;
-            return this;
         }
 
         public static Message<TUserCommand> FromJson(string json)
@@ -72,7 +78,14 @@ namespace ClientServer
 
         public Message<TUserCommand> Add(string key, string value)
         {
-            Data.Add(key, value);
+            if (Data.ContainsKey(key))
+            {
+                Data[key] = value;
+            }
+            else
+            {
+                Data.Add(key, value);
+            }
             return this;
         }
 
@@ -82,12 +95,25 @@ namespace ClientServer
             return this;
         }
 
-        public string GetData(string key)
+        public T GetData<T>(string key)
         {
             if (Data.TryGetValue(key, out string value))
-                return value;
+            {
+                try
+                {
+                    if (typeof(T) == typeof(string))
+                    {
+                        value = (value.StartsWith("\"") ? "" : "\"") + value + (value.EndsWith("\"") ? "" : "\"");
+                    }
 
-            return "";
+                    return JsonSerializer.Deserialize<T>(value);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return default;
         }
 
         public void RemoveData(string key)

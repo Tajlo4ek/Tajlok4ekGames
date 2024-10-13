@@ -69,6 +69,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AtomicValue.cs" />
     <Compile Include="ConfigSaver.cs" />
     <Compile Include="FileUtils.cs" />
     <Compile Include="JsonUtils.cs" />

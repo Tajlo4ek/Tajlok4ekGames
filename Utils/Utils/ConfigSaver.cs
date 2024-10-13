@@ -11,9 +11,9 @@ namespace Tajlo4ekUtils
 
         public static void SetDefaultPath(string path)
         {
-            if (path.EndsWith(Path.DirectorySeparatorChar.ToString()) == false)
+            if (path.EndsWith("/") == false)
             {
-                path += Path.DirectorySeparatorChar;
+                path += "/";
             }
             DefaultConfigPath = path;
         }

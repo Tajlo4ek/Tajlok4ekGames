@@ -1,4 +1,6 @@
-﻿using LauncherServer;
+﻿using ClientServer;
+using ClientServer.fileSend;
+using LauncherServer;
 using LauncherUtils;
 using System;
 using System.Collections.Generic;
@@ -23,44 +25,39 @@ namespace LauncherClient
         public Action<string> OnAppUpdated;
         public Action<int> SendCountNeedLoad;
         public Action<Exception> OnError;
-        public Action<string> OnFileProcess
+
+        public Action<ProgressFileData> OnFileProcess
         {
-            get { return client.OnFileLoadProcess; }
-            set { client.OnFileLoadProcess += value; }
+            get { return client.OnFileLoadProgress; }
+            set { client.OnFileLoadProgress += value; }
         }
         public Action<string> ShowMessage;
+
+        private readonly Dictionary<string, HashSet<string>> needDownloadFiles;
 
         public Controller()
         {
             Load();
             Save();
 
+            needDownloadFiles = new Dictionary<string, HashSet<string>>();
+
             client = new ClientServer.Client<MessageType>(config.ServerIp, "", OnServerError, config.ServerPort);
             client.OnGetMessage += OnGetMessage;
             client.GetFilePath += GetFilePath;
-            client.GetMessageForServer += GetMessageToSend;
 
             client.SetWorkPath(config.ProgramPath);
             client.Start();
 
+            OnFileProcess += FileLoadCallback;
+
             try
             {
-                File.Delete(launcherDir + Path.DirectorySeparatorChar + Config.LauncherName + ".exe.back");
+                File.Delete(launcherDir + "/" + Config.LauncherName + ".exe.back");
             }
             catch (Exception)
             {
             }
-        }
-
-        private ClientServer.Message<MessageType> GetMessageToSend(string token)
-        {
-            if (connection.Token.Equals(token))
-            {
-                return connection.GetMessage();
-            }
-
-            return new ClientServer.Message<MessageType>(
-                ClientServer.Message<MessageType>.GeneralMessageType.Close);
         }
 
         private void OnServerError(Exception ex)
@@ -75,8 +72,8 @@ namespace LauncherClient
             {
                 case MessageType.SendFilesApplication:
                     {
-                        var appName = message.GetData("app");
-                        var files = JsonUtils<List<FileUtils.FileData>>.FromJson(message.GetData("files"));
+                        var appName = message.GetData<string>("app");
+                        var files = message.GetData<List<FileUtils.FileData>>("files");
 
                         if (appName.Length == 0 || files.Count == 0)
                         {
@@ -89,7 +86,7 @@ namespace LauncherClient
 
                 case MessageType.SendInfo:
                     {
-                        var apps = JsonUtils<List<ApplicationAvailable>>.FromJson(message.GetData("info"));
+                        var apps = message.GetData<List<ApplicationAvailable>>("info");
 
                         if (apps.Count == 0) { break; }
 
@@ -106,7 +103,7 @@ namespace LauncherClient
 
                 case MessageType.AppUpdated:
                     {
-                        var app = message.GetData("app");
+                        var app = message.GetData<string>("app");
 
                         if (app.Length != 0)
                         {
@@ -129,7 +126,12 @@ namespace LauncherClient
 
                 case ClientServer.Message<MessageType>.GeneralMessageType.SendReg:
                     {
-                        connection = new Connection(message.GetData("token"), false);
+                        var token = message.GetData<string>("token");
+                        connection = new Connection(token, message.TokenFrom);
+
+                        AddMessageForServer(ClientServer.Message<MessageType>.GeneralMessageType.User,
+                           MessageType.GetInfo);
+
                         CheckUpdate(Config.LauncherName);
                     }
                     break;
@@ -138,21 +140,50 @@ namespace LauncherClient
 
         private string GetFilePath(string name)
         {
-            return config.ProgramPath + Path.DirectorySeparatorChar + name;
+            return config.ProgramPath + "/" + name;
         }
 
-        private void AddMessageForServer(ClientServer.Message<MessageType> message)
+        private void FileLoadCallback(ProgressFileData fileData)
         {
-            message.SetToken(connection.Token);
-            connection.AddDataToSend(message);
+            if (fileData.State == ProgressFileData.States.End)
+            {
+                foreach (var key in needDownloadFiles.Keys)
+                {
+                    needDownloadFiles[key].Remove(fileData.Name);
+                    if (needDownloadFiles[key].Count == 0)
+                    {
+                        CheckUpdate(key);
+                    }
+                }
+            }
+        }
+
+        private void AddMessageForServer(ClientServer.Message<MessageType>.GeneralMessageType type,
+            MessageType command,
+            Dictionary<string, object> data = default)
+        {
+            if (connection != default)
+            {
+                var message = new Message<MessageType>(connection.MyToken, connection.RemoteToken, type)
+                    .SetCommand(command);
+
+                if (data != default)
+                {
+                    foreach (var d in data)
+                    {
+                        message.Add(d.Key, d.Value);
+                    }
+                }
+                client.SendMessage(message);
+            }
         }
 
         public void CheckUpdate(string appName)
         {
-            var infoMessage = new ClientServer.Message<MessageType>()
-                            .SetCommand(MessageType.GetFilesApplication)
-                            .Add("app", appName);
-            AddMessageForServer(infoMessage);
+            AddMessageForServer(
+                ClientServer.Message<MessageType>.GeneralMessageType.User,
+                MessageType.GetFilesApplication,
+                new Dictionary<string, object> { { "app", appName } });
         }
 
         private void LoadApplication(string appName, List<FileUtils.FileData> files)
@@ -167,17 +198,23 @@ namespace LauncherClient
 
             foreach (var file in files)
             {
-                var fullFilePath = config.ProgramPath + Path.DirectorySeparatorChar + appName + Path.DirectorySeparatorChar + file.Name;
+                var fileName = appName + "/" + file.Name;
+                var fullFilePath = config.ProgramPath + "/" + fileName;
 
                 if (FileUtils.GetSHA256(fullFilePath) != file.Hash)
                 {
+                    if (needDownloadFiles.ContainsKey(appName) == false)
+                    {
+                        needDownloadFiles[appName] = new HashSet<string>();
+                    }
+
+                    needDownloadFiles[appName].Add(fileName);
+
                     countNeedLoad++;
-
-                    var message = new ClientServer.Message<MessageType>(
-                        ClientServer.Message<MessageType>.GeneralMessageType.GetFile)
-                            .Add("fileName", appName + Path.DirectorySeparatorChar + file.Name);
-
-                    AddMessageForServer(message);
+                    AddMessageForServer(
+                        ClientServer.Message<MessageType>.GeneralMessageType.GetFile,
+                        MessageType.None,
+                        new Dictionary<string, object> { { "fileName", fileName } });
                 }
             }
 
@@ -192,23 +229,23 @@ namespace LauncherClient
             else
             {
                 SendCountNeedLoad?.Invoke(countNeedLoad);
-                AddMessageForServer(new ClientServer.Message<MessageType>().SetCommand(MessageType.AppUpdated).Add("app", appName));
             }
         }
+
         private void CheckNeedUpdateLauncher()
         {
-#if DEBUG
+#if !DEBUG
             bool needUpdate = false;
 
 
-            var updateDir = config.ProgramPath + Path.DirectorySeparatorChar + Config.LauncherName;
+            var updateDir = config.ProgramPath + "/" + Config.LauncherName;
 
             var files = FileUtils.GetFileWithHash(updateDir);
 
             foreach (var file in files)
             {
                 var origHash = file.Hash;
-                var nowHash = FileUtils.GetSHA256(launcherDir + Path.DirectorySeparatorChar + file.Name);
+                var nowHash = FileUtils.GetSHA256(launcherDir + "/" + file.Name);
 
                 if (origHash != nowHash || nowHash == "")
                 {
@@ -220,8 +257,8 @@ namespace LauncherClient
 
             if (needUpdate)
             {
-                var exeFile = $"{launcherDir}{Path.DirectorySeparatorChar}{Config.LauncherName}.exe";
-                var exeFileBack = $"{launcherDir}{Path.DirectorySeparatorChar}{Config.LauncherName}.exe.back";
+                var exeFile = $"{launcherDir}/{Config.LauncherName}.exe";
+                var exeFileBack = $"{launcherDir}/{Config.LauncherName}.exe.back";
 
                 var args = $"/c echo \"restart\" & timeout 5 & del \"{exeFileBack}\"" +
                     $" & ren \"{exeFile}\" \"{Config.LauncherName}.exe.back\"" +
@@ -272,7 +309,7 @@ namespace LauncherClient
 
         public void RunApplication(string path)
         {
-            Process.Start(config.ProgramPath + Path.DirectorySeparatorChar + path + Path.DirectorySeparatorChar + path + ".exe");
+            Process.Start(config.ProgramPath + "/" + path + "/" + path + ".exe");
         }
 
     }

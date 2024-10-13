@@ -21,6 +21,7 @@ namespace Utils
 
         public static List<FileData> GetFileWithHash(string dirPath)
         {
+            dirPath = dirPath.Replace("\\", "/");
             var res = new List<FileData>();
             var files = GetFilesInDir(dirPath);
 
@@ -28,7 +29,7 @@ namespace Utils
             {
                 res.Add(new FileData
                 {
-                    Name = file.Replace(dirPath + Path.DirectorySeparatorChar, ""),
+                    Name = file.Replace(dirPath + "/", ""),
                     Hash = GetSHA256(file)
                 });
             }
@@ -45,6 +46,11 @@ namespace Utils
             foreach (string subdirectory in subdirectoryEntries)
             {
                 fileEntries.AddRange(GetFilesInDir(subdirectory));
+            }
+
+            for (int i = 0; i < fileEntries.Count; i++)
+            {
+                fileEntries[i] = fileEntries[i].Replace("\\", "/");
             }
 
             return fileEntries;
@@ -73,6 +79,8 @@ namespace Utils
             }
             return "";
         }
+
+
 
         private static string ArrayToHex(ref byte[] array)
         {

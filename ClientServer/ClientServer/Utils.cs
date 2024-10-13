@@ -2,17 +2,18 @@
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading;
 
 namespace ClientServer
 {
+
     public static class Utils
     {
         private const int numCount = 10;
 
         public const int defaultPort = 35124;
 
-        private const int maxPackageSize = 16384;
 
         private static void WaitCount(Socket socket, int count, int timeout)
         {
@@ -55,59 +56,6 @@ namespace ClientServer
                 str = '0' + str;
 
             return str;
-        }
-
-        public static void SendFile(string path, Socket socket)
-        {
-            Thread.Sleep(1000);
-
-            using (var file = new FileStream(path, FileMode.Open, FileAccess.Read))
-            {
-                long lenght = file.Length;
-                int nowSended = 0;
-
-                while (nowSended < lenght)
-                {
-                    byte[] data = new byte[maxPackageSize];
-
-                    int countRead = file.Read(data, 0, maxPackageSize);
-                    socket.Send(Encoding.UTF8.GetBytes(Utils.AddChar(countRead.ToString(), Utils.numCount)));
-                    socket.Send(data, countRead, SocketFlags.None);
-                    nowSended += countRead;
-                }
-            }
-        }
-
-        public static void ReceiveFile(string path, long size, Socket socket, Action<string> onLoadCallaback)
-        {
-            long lenght = size;
-            long nowSize = 0;
-
-            int proc = 0;
-
-            var dirName = Path.GetDirectoryName(path);
-            if (Directory.Exists(dirName) == false)
-            {
-                Directory.CreateDirectory(dirName);
-            }
-
-            using (var file = new FileStream(path, FileMode.Create, FileAccess.Write))
-            {
-                while (nowSize < lenght)
-                {
-                    var bytes = Utils.GetPackage(socket, 30000);
-                    file.Write(bytes, 0, bytes.Length);
-
-                    nowSize += bytes.Length;
-
-                    int buf = (int)(nowSize * 100 / lenght);
-                    if (buf > proc)
-                    {
-                        proc = buf;
-                        onLoadCallaback?.Invoke(proc.ToString() + "%");
-                    }
-                }
-            }
         }
 
         internal static long GetFileSize(string path)

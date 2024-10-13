@@ -27,7 +27,7 @@ namespace LauncherServer
 
         public string ProgramPath { get; set; } =
             Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
-            + Path.DirectorySeparatorChar + ApplicationAvailable.DirName;
+            + "/" + ApplicationAvailable.DirName;
 
         [JsonIgnore]
         public List<ApplicationAvailable> AvailableProgram { get; set; } = new List<ApplicationAvailable>();

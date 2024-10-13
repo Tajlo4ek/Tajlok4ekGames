@@ -1,48 +1,42 @@
-﻿
-// #define NEED_LOG
-
+﻿using ClientServer.fileSend;
 using System;
-using System.IO;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection.Emit;
 using System.Text;
 using System.Threading;
-
-#if NEED_LOG
-using System.Threading.Tasks;
-#endif
+using System.Xml.Linq;
 
 namespace ClientServer
 {
     public class Client<TUserCommand>
     {
-
-        public string Token { get; private set; }
-        private readonly string name;
+        private readonly Tajlo4ekUtils.AtomicValue<string> Token = new Tajlo4ekUtils.AtomicValue<string>();
+        private readonly Tajlo4ekUtils.AtomicValue<string> serverToken = new Tajlo4ekUtils.AtomicValue<string>();
 
         private string workPath;
-
-#if NEED_LOG
-        static int id = 0;
-        private readonly StreamWriter outStream;
-#endif
+        private readonly string name;
 
         public Action<Message<TUserCommand>> OnGetMessage;
 
-        public delegate Message<TUserCommand> GetMessageDelegate(string token);
-        public GetMessageDelegate GetMessageForServer;
-
         private readonly Action<Exception> onErrorAction;
 
-        public Action<string> OnFileLoadProcess;
+        public Action<ProgressFileData> OnFileLoadProgress;
 
-        Thread workThread;
+        Thread workSendThread;
+        Thread workRecvThread;
 
         public delegate string GetFilePathDelegate(string name);
         public GetFilePathDelegate GetFilePath;
 
         private bool needStop = false;
         private readonly Socket sender;
+
+        private readonly SendRecvController sendRecvController;
+
+        private readonly ConcurrentQueue<Message<TUserCommand>> messageQueue;
 
         public Client(string ip, string name, Action<Exception> onError, int port = Utils.defaultPort)
         {
@@ -51,32 +45,29 @@ namespace ClientServer
             sender = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             sender.Connect(ipEndPoint);
 
-            this.name = name;
             this.onErrorAction += onError;
-            Token = "";
-#if NEED_LOG
-            outStream = new StreamWriter("client" + id + ".log");
-            id++;
-#endif
+            Token.Value = "";
+            serverToken.Value = "";
+
+            messageQueue = new ConcurrentQueue<Message<TUserCommand>>();
+            sendRecvController = new SendRecvController();
+
+            this.name = name;
         }
 
         public void Start()
         {
             needStop = false;
-            workThread = new Thread(Work);
-            workThread.Start();
+            workSendThread = new Thread(SendThread);
+            workRecvThread = new Thread(RecvThread);
+
+            workSendThread.Start();
+            workRecvThread.Start();
         }
 
         public void Stop()
         {
             needStop = true;
-#if NEED_LOG
-            if (!(outStream.BaseStream == null))
-            {
-                outStream.Flush();
-                outStream.Close();
-            }
-#endif
         }
 
         public void SetWorkPath(string path)
@@ -84,139 +75,202 @@ namespace ClientServer
             workPath = path;
         }
 
-        public void Work()
+        private void SendThread()
         {
+            var getRegTimeout = DateTime.Now.AddSeconds(30);
+
+            DateTime nextPingTime = DateTime.Now;
+            Message<TUserCommand> pingMessage = default;
+
+            bool isSendStart = false;
+
             try
             {
-                while (true)
+                while (needStop == false)
                 {
-                    if (Token == "")
+                    if (Token.Value.Length == 0)
                     {
-                        var message = new Message<TUserCommand>(Message<TUserCommand>.GeneralMessageType.GetReg)
-                            .Add("name", name);
-                        SendMessage(message);
+                        if (isSendStart == false)
+                        {
+                            isSendStart = true;
+
+                            var startMessage = new Message<TUserCommand>("", "", Message<TUserCommand>.GeneralMessageType.GetReg)
+                                .Add("name", name);
+
+                            Utils.SendPackage(sender, startMessage.GetJson());
+                        }
+
+                        if (getRegTimeout < DateTime.Now)
+                        {
+                            throw new Exception("timeout reg token");
+                        }
+                        else
+                        {
+                            Thread.Sleep(50);
+                        }
                     }
                     else
                     {
-                        Thread.Sleep(5);
-                        var message = GetMessageForServer(Token);
-                        SendMessage(message);
-                    }
+                        if (messageQueue.IsEmpty == false)
+                        {
+                            if (messageQueue.TryDequeue(out Message<TUserCommand> message))
+                            {
+                                Utils.SendPackage(sender, message.GetJson());
 
-                    if (needStop)
-                    {
-                        break;
+                                if (message.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
+                                    && message.MessageType != Message<TUserCommand>.GeneralMessageType.SendFilesProgress
+                                    && message.MessageType != Message<TUserCommand>.GeneralMessageType.RecvFilesProgress)
+                                {
+                                    Log("send: " + message.GetJson());
+                                }
+                            }
+                        }
+                        else if (nextPingTime < DateTime.Now)
+                        {
+                            nextPingTime = DateTime.Now.AddSeconds(1);
+                            if (pingMessage == default)
+                            {
+                                pingMessage = new Message<TUserCommand>(
+                                    Token.Value,
+                                    serverToken.Value,
+                                    Message<TUserCommand>.GeneralMessageType.Ping);
+                            }
+                            SendMessage(pingMessage);
+                        }
+                        else
+                        {
+                            Thread.Sleep(5);
+                        }
                     }
-
                 }
             }
             catch (Exception ex)
             {
-                Log(ex.ToString() + "\n" + ex.StackTrace);
-
-                onErrorAction(ex);
-                workThread.Abort();
+                OnError(ex);
             }
+        }
+
+        private void RecvThread()
+        {
+            try
+            {
+                while (needStop == false)
+                {
+                    var bytes = Utils.GetPackage(sender);
+                    var data = Encoding.UTF32.GetString(bytes);
+
+                    var messageFrom = Message<TUserCommand>.FromJson(data);
+
+                    if (messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
+                        && messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.SendFilesProgress
+                        && messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.RecvFilesProgress)
+                    {
+                        Log("recv: " + data);
+                    }
+
+                    CheckRecvMessage(messageFrom);
+                }
+            }
+            catch (Exception ex)
+            {
+                OnError(ex);
+            }
+        }
+
+        private void OnError(Exception ex)
+        {
+            Log("error: " + ex.ToString() + "\n" + ex.StackTrace);
+
+            needStop = true;
+            onErrorAction(ex);
+
+            workRecvThread.Abort();
+            workSendThread.Abort();
 
             sender.Shutdown(SocketShutdown.Both);
             sender.Close();
         }
 
-        private void OnEnd(Message<TUserCommand> message, Socket socket)
+        private void CheckRecvMessage(Message<TUserCommand> message)
         {
-            try
+            switch (message.MessageType)
             {
-                if (message.MessageType == Message<TUserCommand>.GeneralMessageType.SendReg)
-                {
-                    Token = message.GetData("token");
-                    OnGetMessage(message);
-                }
-                else if (message.MessageType == Message<TUserCommand>.GeneralMessageType.SendFile)
-                {
-                    string fileName = message.GetData("fileName");
+                case Message<TUserCommand>.GeneralMessageType.SendReg:
+                    {
+                        serverToken.Value = message.TokenFrom;
+                        Token.Value = message.GetData<string>("token");
+                    }
+                    break;
 
-                    var path = workPath + @"\" + fileName;
+                case Message<TUserCommand>.GeneralMessageType.SendFile:
+                    {
+                        string fileName = message.GetData<string>("fileName");
+                        var path = workPath + @"\" + fileName;
+                        int fileSize = message.GetData<int>("totalSize");
+                        string fileToken = message.GetData<string>("fileToken");
 
-                    OnFileLoadProcess?.Invoke(fileName);
+                        sendRecvController.AddRecvFile(message.TokenFrom, path, fileName, fileSize, fileToken);
 
-                    Utils.ReceiveFile(
-                        path,
-                        long.Parse(message.GetData("totalSize")),
-                        socket,
-                        OnFileLoadProcess);
+                        SendMessage(new Message<TUserCommand>(
+                            Token.Value,
+                            serverToken.Value,
+                            Message<TUserCommand>.GeneralMessageType.RecvFilesProgress)
+                                .Add("fileToken", fileToken));
+                    }
+                    break;
 
-                    var resMsg = new Message<TUserCommand>(Message<TUserCommand>.GeneralMessageType.FileRecived)
-                        .Add("fileName", fileName)
-                        .Add("filePath", path);
+                case Message<TUserCommand>.GeneralMessageType.SendFilesProgress:
+                    {
+                        var filePart = message.GetData<FilePart>("data");
+                        string fileToken = message.GetData<string>("fileToken");
 
-                    OnGetMessage(resMsg);
-                }
-                else
-                {
-                    OnGetMessage(message);
-                }
+                        if (sendRecvController.TryGetReceivingFile(message.TokenFrom, fileToken, out ReceivingFile file))
+                        {
+                            file.AddBytes(filePart.Data, filePart.Available);
+                            SendMessage(new Message<TUserCommand>(
+                                Token.Value,
+                                serverToken.Value,
+                                Message<TUserCommand>.GeneralMessageType.RecvFilesProgress)
+                                .Add("fileToken", fileToken));
+                        }
+                    }
+                    break;
 
+                case Message<TUserCommand>.GeneralMessageType.FileSended:
+                    {
+                        var fileToken = message.GetData<string>("fileToken");
+
+                        bool ok = sendRecvController.TryGetReceivingFile(message.TokenFrom, fileToken, out ReceivingFile file);
+                        ok &= file?.IsWrited ?? false;
+
+                        if (ok)
+                        {
+                            OnFileLoadProgress?.Invoke(file.ProgressData);
+                        }
+                        else
+                        {
+                            OnFileLoadProgress?.Invoke(new ProgressFileData
+                            {
+                                Name = message.GetData<string>("fileName"),
+                                State = ProgressFileData.States.Error
+                            });
+                        }
+                        sendRecvController.RemoveSendingFile(message.TokenFrom, fileToken);
+                    }
+                    break;
             }
-            catch (Exception ex)
-            {
-                Log(ex.ToString());
-                onErrorAction(ex);
-            }
+
+            OnGetMessage(message);
         }
 
-        private void SendMessage(Message<TUserCommand> message)
+        public void SendMessage(Message<TUserCommand> message)
         {
-            if (message.MessageType == Message<TUserCommand>.GeneralMessageType.SendFile)
-            {
-                var filePath = GetFilePath(message.GetData("fileName"));
-
-                if (File.Exists(filePath))
-                {
-                    message.Add("totalSize", Utils.GetFileSize(filePath).ToString());
-                    Utils.SendPackage(sender, message.GetJson());
-                    Utils.SendFile(filePath, sender);
-                }
-                else
-                {
-                    var ans = new Message<TUserCommand>(Message<TUserCommand>.GeneralMessageType.FileNotExists)
-                        .SetToken(this.Token);
-
-                    Utils.SendPackage(sender, ans.GetJson());
-                }
-            }
-            else
-            {
-                Utils.SendPackage(sender, message.GetJson());
-            }
-
-            var bytes = Utils.GetPackage(sender);
-            var data = Encoding.UTF32.GetString(bytes);
-
-            var messageFrom = Message<TUserCommand>.FromJson(data);
-
-
-            OnEnd(messageFrom, sender);
+            messageQueue.Enqueue(message);
         }
 
         private void Log(string data)
         {
-            Console.WriteLine("recv:" + data);
-
-#if NEED_LOG
-            new Task(new Action(() =>
-            {
-                lock (outStream)
-                {
-                    if (outStream.BaseStream != null)
-                    {
-                        outStream.Write((int)(DateTime.Now - Utils.startTime).TotalMilliseconds);
-                        outStream.Write(" ");
-                        outStream.WriteLine(data);
-                        outStream.Flush();
-                    }
-                }
-            })).Start();
-#endif
+            Console.WriteLine(data);
         }
 
     }

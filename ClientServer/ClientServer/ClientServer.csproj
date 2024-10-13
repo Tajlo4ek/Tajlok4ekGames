@@ -70,8 +70,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Client.cs" />
+    <Compile Include="fileSend\BaseFile.cs" />
+    <Compile Include="fileSend\FilePart.cs" />
+    <Compile Include="fileSend\ProgressFileData.cs" />
+    <Compile Include="fileSend\SendRecvController.cs" />
     <Compile Include="Message.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="fileSend\ReceivingFile.cs" />
+    <Compile Include="fileSend\SendingFile.cs" />
     <Compile Include="Server.cs" />
     <Compile Include="TokenGenerator.cs" />
     <Compile Include="Utils.cs" />
@@ -79,6 +85,12 @@
   <ItemGroup>
     <None Include="app.config" />
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Utils\Utils\Utils.csproj">
+      <Project>{088ac919-64dc-4972-8101-dcd8b7806f06}</Project>
+      <Name>Utils</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
