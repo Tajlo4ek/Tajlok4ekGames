@@ -1,11 +1,7 @@
 ﻿using ClientServer.FileUtils;
-using LauncherServer;
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Net.Sockets;
 using System.Windows.Forms;
-using Tajlo4ekUtils;
 
 namespace LauncherClient
 {
@@ -32,9 +28,9 @@ namespace LauncherClient
             controller = new Controller();
             controller.AddNewApplication += CreateApplication;
             controller.OnAppUpdated += AppUpdated;
-            controller.OnFileProcess += LoadProcess;
+            controller.OnFileLoadProgress += FileLoadProgress;
             controller.SendCountNeedLoad += RecvCountNeedLoad;
-            controller.ShowMessage += ShowMessage;
+            controller.OnError += OnError;
         }
 
         private void ShowMessage(string message)
@@ -45,7 +41,16 @@ namespace LauncherClient
             }));
         }
 
-        private void LoadProcess(ProgressFileData data)
+        private void OnError()
+        {
+            ShowMessage("Ошибка связи с сервером");
+            this.BeginInvoke(new Action(() =>
+            {
+                flpMain.Controls.Clear();
+            }));
+        }
+
+        private void FileLoadProgress(ProgressFileData data)
         {
             this.BeginInvoke(new Action(() =>
             {
@@ -106,7 +111,7 @@ namespace LauncherClient
                     Enabled = false
                 };
 
-                buttonsApp.Add(path, button);
+                buttonsApp[path] = button;
 
                 button.Click += (object sender, EventArgs e) =>
                 {
@@ -123,7 +128,7 @@ namespace LauncherClient
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            controller?.Stop();
+            controller.Stop();
         }
 
         private void BtnSetting_Click(object sender, EventArgs e)

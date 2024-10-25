@@ -23,12 +23,12 @@ namespace LauncherClient
         public Action<string> OnAppUpdated;
         public Action<int> SendCountNeedLoad;
 
-        public Action<ProgressFileData> OnFileProcess
+        public Action<ProgressFileData> OnFileLoadProgress
         {
             get { return client.OnFileLoadProgress; }
             set { client.OnFileLoadProgress += value; }
         }
-        public Action<string> ShowMessage;
+        public Action OnError;
 
         private readonly Dictionary<string, HashSet<string>> needDownloadFiles;
 
@@ -50,7 +50,7 @@ namespace LauncherClient
                 client.OnServerConnected += OnServerConnected;
             }
 
-            OnFileProcess += FileLoadCallback;
+            OnFileLoadProgress += FileLoadCallback;
 
             try
             {
@@ -68,9 +68,9 @@ namespace LauncherClient
 
         private void OnServerError(Exception ex, string str)
         {
-            client.Stop();
-            ShowMessage?.Invoke("Ошибка связи с сервером");
+            OnError?.Invoke();
             LoadApplicationData();
+            Stop();
         }
 
         private void OnGetMessageUser(ClientServer.Message<MessageType> message)
@@ -300,6 +300,14 @@ namespace LauncherClient
 
         public void Stop()
         {
+
+            AddNewApplication = null;
+            OnAppUpdated = null;
+            SendCountNeedLoad = null;
+
+            OnFileLoadProgress = null;
+            OnError = null;
+
             client.Stop();
         }
 

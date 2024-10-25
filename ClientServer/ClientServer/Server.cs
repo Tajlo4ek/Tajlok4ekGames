@@ -39,8 +39,8 @@ namespace ClientServer
         public override void Stop()
         {
             base.Stop();
-            mainSocket.Close();
-            workThread.Abort();
+            mainSocket?.Close();
+            workThread?.Abort();
         }
 
         protected override void CheckRecvMessage(Message<TUserCommand> message)
