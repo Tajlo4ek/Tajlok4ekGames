@@ -15,24 +15,15 @@ namespace LauncherServer
 
         private readonly ClientServer.Server<MessageType> server;
 
-        private readonly List<Connection> connections;
-
         public Controller()
         {
-            connections = new List<Connection>();
-
             Load();
             Save();
 
-            server = new ClientServer.Server<MessageType>(config.ServerIp, OnServerError, config.ServerPort);
-            server.onGetMessage += OnGetMessage;
+            server = new ClientServer.Server<MessageType>(config.ServerIp, config.ServerPort);
+            server.onGetMessage += OnGetMessageUser;
             server.GetFilePath += GetFilePath;
             server.Start();
-        }
-
-        private void OnServerError(Exception ex, string token)
-        {
-
         }
 
         private void OnGetMessageUser(ClientServer.Message<MessageType> message)
@@ -72,30 +63,6 @@ namespace LauncherServer
                            .SetCommand(MessageType.AppUpdated)
                            .Add("app", message.GetData<string>("app"));
                         server.SendMessage(infoMessage);
-                    }
-                    break;
-            }
-        }
-
-        private void OnGetMessage(ClientServer.Message<MessageType> message)
-        {
-            var messageToken = message.TokenFrom;
-
-            connections.ForEach((connection) => { if (connection.MyToken.Equals(messageToken)) { connection.Update(); } });
-
-            switch (message.MessageType)
-            {
-                case ClientServer.Message<MessageType>.GeneralMessageType.User:
-                    {
-                        OnGetMessageUser(message);
-                    }
-                    break;
-
-                case ClientServer.Message<MessageType>.GeneralMessageType.GetReg:
-                    {
-                        var token = message.GetData<string>("token");
-                        Connection newConnection = new Connection(token, server.ServerToken);
-                        connections.Add(newConnection);
                     }
                     break;
             }

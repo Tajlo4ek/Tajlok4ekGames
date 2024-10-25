@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ClientServer.fileSend
+namespace ClientServer.FileUtils
 {
     internal class BaseFile
     {

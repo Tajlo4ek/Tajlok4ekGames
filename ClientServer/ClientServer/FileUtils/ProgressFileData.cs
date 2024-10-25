@@ -1,5 +1,5 @@
 ﻿
-namespace ClientServer.fileSend
+namespace ClientServer.FileUtils
 {
     public class ProgressFileData
     {

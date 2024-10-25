@@ -69,15 +69,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BaseClientServer.cs" />
     <Compile Include="Client.cs" />
-    <Compile Include="fileSend\BaseFile.cs" />
-    <Compile Include="fileSend\FilePart.cs" />
-    <Compile Include="fileSend\ProgressFileData.cs" />
-    <Compile Include="fileSend\SendRecvController.cs" />
+    <Compile Include="FileUtils\BaseFile.cs" />
+    <Compile Include="FileUtils\FilePart.cs" />
+    <Compile Include="FileUtils\ProgressFileData.cs" />
+    <Compile Include="FileUtils\SendRecvController.cs" />
     <Compile Include="Message.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="fileSend\ReceivingFile.cs" />
-    <Compile Include="fileSend\SendingFile.cs" />
+    <Compile Include="FileUtils\ReceivingFile.cs" />
+    <Compile Include="FileUtils\SendingFile.cs" />
     <Compile Include="Server.cs" />
     <Compile Include="TokenGenerator.cs" />
     <Compile Include="Utils.cs" />

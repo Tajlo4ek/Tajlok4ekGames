@@ -12,9 +12,13 @@ namespace Tajlo4ekUtils
 
         private T _value;
 
-        public AtomicValue()
+        public AtomicValue(T data)
         {
-            _value = default;
+            _value = data;
+        }
+
+        public AtomicValue() : this(default)
+        {
         }
 
         public T Value

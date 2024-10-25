@@ -12,21 +12,27 @@ namespace ClientServer
             User = 0,
 
             Ping = 1,
+            Close = 2,
 
-            GetReg = 2,
-            SendReg = 3,
+            GetReg = 3,
+            SendReg = 4,
 
-            GetFile = 4,
-            SendFile = 5,
-            SendFilesProgress = 6,
-            RecvFilesProgress = 7,
+            FileProgress = 5,
 
-            FileNotExists = 8,
-            FileRecived = 9,
-            FileSended = 10,
-
-            Close = 11,
         }
+
+        public enum FileProgressMessageType
+        {
+            GetFile = 0,
+            SendFile = 1,
+
+            SendFilesProgress = 2,
+            RecvFilesProgress = 3,
+
+            FileNotExists = 4,
+            FileReceived = 5,
+            FileSended = 6,
+        };
 
         [JsonPropertyName("command")]
         public TUserCommand Command { get; set; }

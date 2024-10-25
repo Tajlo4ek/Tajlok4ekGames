@@ -1,7 +1,6 @@
 ﻿using ClientServer;
-using ClientServer.fileSend;
+using ClientServer.FileUtils;
 using LauncherServer;
-using LauncherUtils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -18,8 +17,6 @@ namespace LauncherClient
 
         private readonly ClientServer.Client<MessageType> client;
         private readonly string launcherDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-
-        private Connection connection;
 
         public Action<string, string> AddNewApplication;
         public Action<string> OnAppUpdated;
@@ -42,11 +39,13 @@ namespace LauncherClient
 
             needDownloadFiles = new Dictionary<string, HashSet<string>>();
 
-            client = new ClientServer.Client<MessageType>(config.ServerIp, "", OnServerError, config.ServerPort);
-            client.OnGetMessage += OnGetMessage;
+            client = new ClientServer.Client<MessageType>(config.ServerIp, config.ServerPort);
+            client.OnGetMessage += OnGetMessageUser;
+            client.onErrorAction += OnServerError;
             client.GetFilePath += GetFilePath;
 
             client.SetWorkPath(config.ProgramPath);
+            client.OnServerConnected += OnServerConnected;
             client.Start();
 
             OnFileProcess += FileLoadCallback;
@@ -60,7 +59,7 @@ namespace LauncherClient
             }
         }
 
-        private void OnServerError(Exception ex)
+        private void OnServerError(Exception ex, string str)
         {
             client.Stop();
             ShowMessage?.Invoke("Ошибка связи с сервером");
@@ -114,28 +113,12 @@ namespace LauncherClient
             }
         }
 
-        private void OnGetMessage(ClientServer.Message<MessageType> message)
+        private void OnServerConnected()
         {
-            switch (message.MessageType)
-            {
-                case ClientServer.Message<MessageType>.GeneralMessageType.User:
-                    {
-                        OnGetMessageUser(message);
-                    }
-                    break;
-
-                case ClientServer.Message<MessageType>.GeneralMessageType.SendReg:
-                    {
-                        var token = message.GetData<string>("token");
-                        connection = new Connection(token, message.TokenFrom);
-
-                        AddMessageForServer(ClientServer.Message<MessageType>.GeneralMessageType.User,
+            AddMessageForServer(ClientServer.Message<MessageType>.GeneralMessageType.User,
                            MessageType.GetInfo);
 
-                        CheckUpdate(Config.LauncherName);
-                    }
-                    break;
-            }
+            CheckUpdate(Config.LauncherName);
         }
 
         private string GetFilePath(string name)
@@ -162,20 +145,20 @@ namespace LauncherClient
             MessageType command,
             Dictionary<string, object> data = default)
         {
-            if (connection != default)
-            {
-                var message = new Message<MessageType>(connection.MyToken, connection.RemoteToken, type)
-                    .SetCommand(command);
+            if (client.ServerToken.Length == 0) { return; }
 
-                if (data != default)
+            var message = new Message<MessageType>(client.MyToken, client.ServerToken, type)
+                .SetCommand(command);
+
+            if (data != default)
+            {
+                foreach (var d in data)
                 {
-                    foreach (var d in data)
-                    {
-                        message.Add(d.Key, d.Value);
-                    }
+                    message.Add(d.Key, d.Value);
                 }
-                client.SendMessage(message);
             }
+            client.SendMessage(message);
+
         }
 
         public void CheckUpdate(string appName)
@@ -212,9 +195,12 @@ namespace LauncherClient
 
                     countNeedLoad++;
                     AddMessageForServer(
-                        ClientServer.Message<MessageType>.GeneralMessageType.GetFile,
+                        ClientServer.Message<MessageType>.GeneralMessageType.FileProgress,
                         MessageType.None,
-                        new Dictionary<string, object> { { "fileName", fileName } });
+                        new Dictionary<string, object> {
+                            { "fileName", fileName },
+                            { "type", ClientServer.Message<MessageType>.FileProgressMessageType.GetFile }
+                        });
                 }
             }
 

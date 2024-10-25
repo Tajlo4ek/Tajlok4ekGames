@@ -80,12 +80,9 @@ namespace Utils
             return "";
         }
 
-
-
         private static string ArrayToHex(ref byte[] array)
         {
             StringBuilder stringBuilder = new StringBuilder();
-
 
             for (int i = 0; i < array.Length; i++)
             {
