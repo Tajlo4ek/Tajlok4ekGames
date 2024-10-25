@@ -19,7 +19,7 @@ namespace LauncherServer
     public class Config
     {
         public static readonly string LauncherName = "LauncherClient";
-        public static readonly string ConfigName = @"config";
+        public static readonly string ConfigName = "launcherConfig";
 
         public string ServerIp { get; set; } = "127.0.0.1";
 

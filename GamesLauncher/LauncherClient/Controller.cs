@@ -187,7 +187,10 @@ namespace LauncherClient
             }
 
             int countNeedLoad = 0;
-            files.Remove(files.Find((file) => { return file.Name == Config.ConfigName + ".json"; }));
+            if (appName == Config.LauncherName)
+            {
+                files.Remove(files.Find((file) => { return file.Name.EndsWith(Config.ConfigName + ".json"); }));
+            }
 
             foreach (var file in files)
             {
