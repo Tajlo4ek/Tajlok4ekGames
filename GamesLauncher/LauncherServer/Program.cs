@@ -5,11 +5,8 @@ namespace LauncherServer
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static void Main()
         {
-            var path = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-            ConfigSaver<Config>.SetDefaultPath(path);
-
             new Controller();
         }
     }

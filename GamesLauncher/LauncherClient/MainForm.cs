@@ -26,36 +26,15 @@ namespace LauncherClient
             this.MinimizeBox = false;
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
 
-            var path = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-            ConfigSaver<Config>.SetDefaultPath(path);
-
 
             buttonsApp = new Dictionary<string, Button>();
 
-            try
-            {
-                controller = new Controller();
-                controller.AddNewApplication += CreateApplication;
-                controller.OnAppUpdated += AppUpdated;
-                controller.OnFileProcess += LoadProcess;
-                controller.SendCountNeedLoad += RecvCountNeedLoad;
-                controller.OnError += OnError;
-                controller.ShowMessage += ShowMessage;
-            }
-            catch (SocketException)
-            {
-                labelLog.Text = "Нет связи с сервером";
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message + "\r\n" + ex.StackTrace);
-            }
-
-        }
-
-        private void OnError(Exception ex)
-        {
-            MessageBox.Show(ex.Message);
+            controller = new Controller();
+            controller.AddNewApplication += CreateApplication;
+            controller.OnAppUpdated += AppUpdated;
+            controller.OnFileProcess += LoadProcess;
+            controller.SendCountNeedLoad += RecvCountNeedLoad;
+            controller.ShowMessage += ShowMessage;
         }
 
         private void ShowMessage(string message)
@@ -155,6 +134,11 @@ namespace LauncherClient
                 StartPosition = FormStartPosition.Manual
             };
             window.ShowDialog();
+        }
+
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            controller.Start();
         }
     }
 }

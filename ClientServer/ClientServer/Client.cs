@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -18,22 +19,31 @@ namespace ClientServer
         Thread workSendThread;
         Thread workRecvThread;
 
-        public Client(string ip, int port = Utils.defaultPort)
+        public Client(IPAddress ip, int port = Utils.defaultPort)
             : base(ip, port)
         {
         }
 
-        public override void Start()
+        public override bool Start()
         {
-            base.Start();
+            try
+            {
+                base.Start();
 
-            mainSocket.Connect(ipEndPoint);
+                mainSocket.Connect(ipEndPoint);
 
-            workSendThread = new Thread(SendThread);
-            workRecvThread = new Thread(RecvThread);
+                workSendThread = new Thread(SendThread);
+                workRecvThread = new Thread(RecvThread);
 
-            workSendThread.Start();
-            workRecvThread.Start();
+                workSendThread.Start();
+                workRecvThread.Start();
+            }
+            catch (Exception ex)
+            {
+                OnError(ex);
+                return false;
+            }
+            return true;
         }
 
 
@@ -125,13 +135,19 @@ namespace ClientServer
 
             Stop();
 
-            onErrorAction(ex, Token.Value);
+            onErrorAction?.Invoke(ex, Token.Value);
 
-            workRecvThread.Abort();
-            workSendThread.Abort();
+            workRecvThread?.Abort();
+            workSendThread?.Abort();
 
-            mainSocket.Shutdown(SocketShutdown.Both);
-            mainSocket.Close();
+            try
+            {
+                mainSocket?.Shutdown(SocketShutdown.Both);
+                mainSocket?.Close();
+            }
+            catch (Exception)
+            {
+            }
         }
 
         protected override void CheckRecvMessage(Message<TUserCommand> message)

@@ -62,9 +62,8 @@ namespace ClientServer
 
         private readonly ConcurrentDictionary<string, Connection> connections;
 
-        public BaseClientServer(string ip, int port)
+        public BaseClientServer(IPAddress ipAddr, int port)
         {
-            var ipAddr = IPAddress.Parse(ip);
             ipEndPoint = new IPEndPoint(ipAddr, port);
             mainSocket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
@@ -270,8 +269,9 @@ namespace ClientServer
             workPath = path;
         }
 
-        public virtual void Start()
+        public virtual bool Start()
         {
+            return true;
         }
 
         public virtual void Stop()

@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using Tajlo4ekUtils;
 using Utils;
 using MessageType = LauncherUtils.Messages.MessageType;
@@ -18,10 +19,17 @@ namespace LauncherServer
             Load();
             Save();
 
-            server = new ClientServer.Server<MessageType>(config.ServerIp, config.ServerPort);
-            server.onGetMessage += OnGetMessageUser;
-            server.GetFilePath += GetFilePath;
-            server.Start();
+            if (IPAddress.TryParse(config.ServerIp, out IPAddress ipAddr))
+            {
+                server = new ClientServer.Server<MessageType>(ipAddr, config.ServerPort);
+                server.onGetMessage += OnGetMessageUser;
+                server.GetFilePath += GetFilePath;
+                server.Start();
+            }
+            else
+            {
+                throw new System.Exception("bad config. cant start");
+            }
         }
 
         private void OnGetMessageUser(ClientServer.Message<MessageType> message)
@@ -84,9 +92,9 @@ namespace LauncherServer
             }
             else
             {
-                ConfigSaver<List<ApplicationAvailable>>.SetDefaultPath(config.ProgramPath);
                 if (ConfigSaver<List<ApplicationAvailable>>.Load(
                     ApplicationAvailable.DirName,
+                    config.ProgramPath,
                     out List<ApplicationAvailable> applicationAvailable))
                 {
                     config.AvailableProgram = applicationAvailable;

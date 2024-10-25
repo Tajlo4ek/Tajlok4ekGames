@@ -7,29 +7,30 @@ namespace Tajlo4ekUtils
 
     public class ConfigSaver<SaveObj>
     {
-        private static string DefaultConfigPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\tajlo4ekGames\";
-
-        public static void SetDefaultPath(string path)
-        {
-            if (path.EndsWith("/") == false)
-            {
-                path += "/";
-            }
-            DefaultConfigPath = path;
-        }
+        private static readonly string DefaultConfigPath = Environment.CurrentDirectory + "/config/";
 
         public static bool Save(string name, SaveObj obj)
         {
+            return Save(name, DefaultConfigPath, obj);
+        }
+
+        public static bool Save(string name, string dir, SaveObj obj)
+        {
             try
             {
-                if (!Directory.Exists(DefaultConfigPath))
+                if (dir.EndsWith("/") == false)
                 {
-                    Directory.CreateDirectory(DefaultConfigPath);
+                    dir += "/";
+                }
+
+                if (!Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
                 }
 
                 var json = JsonUtils<SaveObj>.ToJson(obj, true);
 
-                using (StreamWriter sw = new StreamWriter(DefaultConfigPath + name + ".json"))
+                using (StreamWriter sw = new StreamWriter(dir + name + ".json"))
                 {
                     sw.Write(json);
                 }
@@ -43,14 +44,23 @@ namespace Tajlo4ekUtils
             return true;
         }
 
-
         public static bool Load(string name, out SaveObj obj)
+        {
+            return Load(name, DefaultConfigPath, out obj);
+        }
+
+        public static bool Load(string name, string dir, out SaveObj obj)
         {
             obj = default;
 
             try
             {
-                var fileName = DefaultConfigPath + name + ".json";
+                if (dir.EndsWith("/") == false)
+                {
+                    dir += "/";
+                }
+
+                var fileName = dir + name + ".json";
 
                 if (File.Exists(fileName) != true) { return false; }
 

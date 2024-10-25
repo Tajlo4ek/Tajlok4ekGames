@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -13,17 +14,26 @@ namespace ClientServer
 
         public Action<string> NewUserConnect;
 
-        public Server(string ip, int port = Utils.defaultPort)
+        public Server(IPAddress ip, int port = Utils.defaultPort)
             : base(ip, port)
         {
             Token.Value = TokenGenerator.Generate();
         }
 
-        public override void Start()
+        public override bool Start()
         {
-            base.Start();
-            workThread = new Thread(Work);
-            workThread.Start();
+            try
+            {
+                base.Start();
+                workThread = new Thread(Work);
+                workThread.Start();
+            }
+            catch (Exception ex)
+            {
+                OnError("", null, ex);
+                return false;
+            }
+            return true;
         }
 
         public override void Stop()
@@ -124,9 +134,9 @@ namespace ClientServer
 
         private void OnError(string token, Socket socket, Exception ex)
         {
-            socket.Shutdown(SocketShutdown.Both);
+            socket?.Shutdown(SocketShutdown.Both);
             Log("error " + ex.ToString() + " \n" + ex.StackTrace);
-            onErrorAction(ex, token);
+            onErrorAction?.Invoke(ex, token);
         }
 
         private void Work()

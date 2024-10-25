@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using Tajlo4ekUtils;
 using Utils;
 using static LauncherUtils.Messages;
@@ -16,12 +17,11 @@ namespace LauncherClient
         private Config config;
 
         private readonly ClientServer.Client<MessageType> client;
-        private readonly string launcherDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+        private readonly string launcherDir = Environment.CurrentDirectory;
 
         public Action<string, string> AddNewApplication;
         public Action<string> OnAppUpdated;
         public Action<int> SendCountNeedLoad;
-        public Action<Exception> OnError;
 
         public Action<ProgressFileData> OnFileProcess
         {
@@ -39,14 +39,16 @@ namespace LauncherClient
 
             needDownloadFiles = new Dictionary<string, HashSet<string>>();
 
-            client = new ClientServer.Client<MessageType>(config.ServerIp, config.ServerPort);
-            client.OnGetMessage += OnGetMessageUser;
-            client.onErrorAction += OnServerError;
-            client.GetFilePath += GetFilePath;
+            if (IPAddress.TryParse(config.ServerIp, out IPAddress ipAddr))
+            {
+                client = new ClientServer.Client<MessageType>(ipAddr, config.ServerPort);
+                client.OnGetMessage += OnGetMessageUser;
+                client.onErrorAction += OnServerError;
+                client.GetFilePath += GetFilePath;
 
-            client.SetWorkPath(config.ProgramPath);
-            client.OnServerConnected += OnServerConnected;
-            client.Start();
+                client.SetWorkPath(config.ProgramPath);
+                client.OnServerConnected += OnServerConnected;
+            }
 
             OnFileProcess += FileLoadCallback;
 
@@ -59,10 +61,16 @@ namespace LauncherClient
             }
         }
 
+        public bool Start()
+        {
+            return client.Start();
+        }
+
         private void OnServerError(Exception ex, string str)
         {
             client.Stop();
             ShowMessage?.Invoke("Ошибка связи с сервером");
+            LoadApplicationData();
         }
 
         private void OnGetMessageUser(ClientServer.Message<MessageType> message)
@@ -88,6 +96,8 @@ namespace LauncherClient
                         var apps = message.GetData<List<ApplicationAvailable>>("info");
 
                         if (apps.Count == 0) { break; }
+
+                        SaveApplicationData(apps);
 
                         foreach (var app in apps)
                         {
@@ -210,7 +220,7 @@ namespace LauncherClient
                 {
                     CheckNeedUpdateLauncher();
                 }
-                OnAppUpdated(appName);
+                OnAppUpdated?.Invoke(appName);
             }
             else
             {
@@ -298,5 +308,29 @@ namespace LauncherClient
             Process.Start(config.ProgramPath + "/" + path + "/" + path + ".exe");
         }
 
+        private void SaveApplicationData(List<ApplicationAvailable> data)
+        {
+            ConfigSaver<List<ApplicationAvailable>>.Save(Config.ConfigName, config.ProgramPath, data);
+        }
+
+        private void LoadApplicationData()
+        {
+            if (ConfigSaver<List<ApplicationAvailable>>.Load(
+                Config.ConfigName,
+                config.ProgramPath,
+                out List<ApplicationAvailable> apps) == false)
+            {
+                return;
+            }
+
+            foreach (var app in apps)
+            {
+                if (app.Path != Config.LauncherName)
+                {
+                    AddNewApplication?.Invoke(app.Name, app.Path);
+                    OnAppUpdated?.Invoke(app.Path);
+                }
+            }
+        }
     }
 }
