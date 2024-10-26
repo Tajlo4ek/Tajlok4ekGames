@@ -44,7 +44,6 @@ namespace LauncherClient
                 client = new ClientServer.Client<MessageType>(ipAddr, config.ServerPort);
                 client.OnGetMessage += OnGetMessageUser;
                 client.onErrorAction += OnServerError;
-                client.GetFilePath += GetFilePath;
 
                 client.SetWorkPath(config.ProgramPath);
                 client.OnServerConnected += OnServerConnected;
@@ -129,11 +128,6 @@ namespace LauncherClient
                            MessageType.GetInfo);
 
             CheckUpdate(Config.LauncherName);
-        }
-
-        private string GetFilePath(string name)
-        {
-            return config.ProgramPath + "/" + name;
         }
 
         private void FileLoadCallback(ProgressFileData fileData)
@@ -321,13 +315,13 @@ namespace LauncherClient
 
         private void SaveApplicationData(List<ApplicationAvailable> data)
         {
-            ConfigSaver<List<ApplicationAvailable>>.Save(Config.ConfigName, config.ProgramPath, data);
+            ConfigSaver<List<ApplicationAvailable>>.Save(Config.ApplicationSaveFile, config.ProgramPath, data);
         }
 
         private void LoadApplicationData()
         {
             if (ConfigSaver<List<ApplicationAvailable>>.Load(
-                Config.ConfigName,
+                Config.ApplicationSaveFile,
                 config.ProgramPath,
                 out List<ApplicationAvailable> apps) == false)
             {

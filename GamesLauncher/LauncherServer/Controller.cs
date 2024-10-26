@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using ClientServer;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using Tajlo4ekUtils;
@@ -23,7 +24,7 @@ namespace LauncherServer
             {
                 server = new ClientServer.Server<MessageType>(ipAddr, config.ServerPort);
                 server.onGetMessage += OnGetMessageUser;
-                server.GetFilePath += GetFilePath;
+                server.SetWorkPath(config.ProgramPath);
                 server.Start();
             }
             else
@@ -74,11 +75,6 @@ namespace LauncherServer
             }
         }
 
-        private string GetFilePath(string name)
-        {
-            return config.ProgramPath + "/" + name;
-        }
-
         private void Load()
         {
             if (ConfigSaver<Config>.Load(Config.ConfigName, out config) == false)
@@ -93,7 +89,7 @@ namespace LauncherServer
             else
             {
                 if (ConfigSaver<List<ApplicationAvailable>>.Load(
-                    ApplicationAvailable.DirName,
+                    Config.ApplicationSaveFile,
                     config.ProgramPath,
                     out List<ApplicationAvailable> applicationAvailable))
                 {

@@ -37,8 +37,8 @@ namespace ClientServer
         [JsonPropertyName("command")]
         public TUserCommand Command { get; set; }
 
-        [JsonPropertyName("message")]
-        public GeneralMessageType MessageType { get; set; }
+        [JsonPropertyName("messageType")]
+        public GeneralMessageType MessageType { get; private set; }
 
         [JsonPropertyName("tokenFrom")]
         public string TokenFrom { get; private set; }
@@ -50,21 +50,17 @@ namespace ClientServer
         public Dictionary<string, string> Data { get; set; }
 
         [JsonConstructor]
-        public Message(string tokenFrom, string tokenTo) : this(tokenFrom, tokenTo, GeneralMessageType.User)
+        public Message(string tokenFrom, string tokenTo, GeneralMessageType messageType)
         {
-        }
-
-        public Message(string tokenFrom, string tokenTo, GeneralMessageType generalMessageType)
-        {
-            this.MessageType = generalMessageType;
+            this.MessageType = messageType;
             Data = new Dictionary<string, string>();
             this.TokenFrom = tokenFrom;
             this.TokenTo = tokenTo;
         }
 
-        public Message<TUserCommand> GetReply()
+        public Message<TUserCommand> GetReply(GeneralMessageType generalMessageType = GeneralMessageType.User)
         {
-            return new Message<TUserCommand>(TokenTo, TokenFrom);
+            return new Message<TUserCommand>(TokenTo, TokenFrom, generalMessageType);
         }
 
         public string GetJson()

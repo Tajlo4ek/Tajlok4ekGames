@@ -20,6 +20,7 @@ namespace LauncherServer
     {
         public static readonly string LauncherName = "LauncherClient";
         public static readonly string ConfigName = "launcherConfig";
+        public static readonly string ApplicationSaveFile = "applications";
 
         public string ServerIp { get; set; } = "127.0.0.1";
 

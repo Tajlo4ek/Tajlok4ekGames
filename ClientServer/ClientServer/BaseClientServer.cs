@@ -27,9 +27,6 @@ namespace ClientServer
 
         private string workPath;
 
-        public delegate string GetFilePathDelegate(string name);
-        public GetFilePathDelegate GetFilePath;
-
         private readonly ConcurrentDictionary<string, ConcurrentQueue<Message<TUserCommand>>> messageQueue;
 
         private class Connection
@@ -77,22 +74,21 @@ namespace ClientServer
         {
             var type = message.GetData<Message<TUserCommand>.FileProgressMessageType>("type");
 
-            var reply = message.GetReply();
-            reply.MessageType = Message<TUserCommand>.GeneralMessageType.FileProgress;
+            var reply = message.GetReply(Message<TUserCommand>.GeneralMessageType.FileProgress);
 
             switch (type)
             {
                 case Message<TUserCommand>.FileProgressMessageType.GetFile:
                     {
                         string fileName = message.GetData<string>("fileName");
-                        string filePath = GetFilePath(fileName);
+                        var path = workPath + @"\" + fileName;
 
-                        if (File.Exists(filePath))
+                        if (File.Exists(path))
                         {
-                            var length = Utils.GetFileSize(filePath);
+                            var length = Utils.GetFileSize(path);
                             onGetMessage(message);
 
-                            var fileToken = sendRecvController.AddSendFile(message.TokenFrom, filePath);
+                            var fileToken = sendRecvController.AddSendFile(message.TokenFrom, path);
 
                             reply.Add("totalSize", length.ToString())
                                  .Add("fileName", fileName)
