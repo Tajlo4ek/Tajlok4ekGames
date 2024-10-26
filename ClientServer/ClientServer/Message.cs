@@ -50,7 +50,7 @@ namespace ClientServer
         public Dictionary<string, string> Data { get; set; }
 
         [JsonConstructor]
-        public Message(string tokenFrom, string tokenTo, GeneralMessageType messageType)
+        public Message(string tokenFrom, string tokenTo, GeneralMessageType messageType = GeneralMessageType.User)
         {
             this.MessageType = messageType;
             Data = new Dictionary<string, string>();

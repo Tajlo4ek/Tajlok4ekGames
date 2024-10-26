@@ -162,7 +162,6 @@ namespace LauncherClient
                 }
             }
             client.SendMessage(message);
-
         }
 
         public void CheckUpdate(string appName)
