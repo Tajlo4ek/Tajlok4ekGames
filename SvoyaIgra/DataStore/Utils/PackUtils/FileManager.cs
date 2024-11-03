@@ -16,7 +16,6 @@ namespace DataStore.Utils.PackUtils
         public FileManager()
         {
             packManager = new PackManager();
-
             files = new Dictionary<string, string>();
         }
 
@@ -25,35 +24,34 @@ namespace DataStore.Utils.PackUtils
             return packManager.LoadPack(path);
         }
 
-        public void LoadImg(string path, string name)
+        public Package LoadPackFromLocal(string localName)
         {
-            var newPathImg = WorkDirectory + @"\" + name;
+            return LoadPack(WorkDirectory + "/" + localName);
+        }
 
-            bool isFind = false;
+        public void LoadImg(string url, string name)
+        {
+            var newPathImg = WorkDirectory + "/" + name;
+
+            bool isFind = true;
 
             try
             {
-                if (path.StartsWith("http"))
+                if (url.StartsWith("http"))
                 {
-                    if (FileLoader.TryLoad(path, newPathImg, out string imgPath))
+                    if (FileLoader.TryLoad(url, newPathImg, out string imgPath))
                     {
-                        //if (!System.Drawing.Imaging.ImageFormat.Gif.Equals(Image.FromFile(imgPath).RawFormat))
-                        {
-                            files.Add(name, imgPath);
-                            isFind = true;
-                        }
+                        files.Add(name, imgPath);
                     }
                 }
                 else
                 {
-                    newPathImg += path.Substring(path.LastIndexOf("."));
-                    if (File.Exists(path))
+                    if (File.Exists(url))
                     {
-                        if (!System.Drawing.Imaging.ImageFormat.Gif.Equals(Image.FromFile(path).RawFormat))
+                        if (!System.Drawing.Imaging.ImageFormat.Gif.Equals(Image.FromFile(url).RawFormat))
                         {
-                            File.Copy(path, newPathImg);
+                            File.Copy(url, newPathImg);
                             files.Add(name, newPathImg);
-                            isFind = true;
                         }
                     }
                 }
@@ -61,6 +59,7 @@ namespace DataStore.Utils.PackUtils
             catch (Exception ex)
             {
                 Console.WriteLine(ex.Message);
+                isFind = false;
             }
 
             if (!isFind)
@@ -73,25 +72,27 @@ namespace DataStore.Utils.PackUtils
 
         public void AddFile(string path, string name)
         {
-            files.Add(name, path);
+            files[name] = path;
         }
 
-        public string GetFilePath(string name)
+        public void AddLocalFile(string name)
+        {
+            AddFile(WorkDirectory + "/" + name, name);
+        }
+
+        public string GetRealPath(string name)
         {
             return files.TryGetValue(name, out string path) ? path : "";
         }
 
         public void RenameFile(string oldName, string newName)
         {
-            if (files.TryGetValue(oldName, out string path))
-            {
-                var ind = path.LastIndexOf(@"\");
-                var buf = path.Substring(0, ind);
-                string newPath = buf + @"\" + newName;
-                File.Copy(GetFilePath(oldName), newPath);
-                files.Remove(oldName);
-                AddFile(newPath, newName);
-            }
+            var oldFullName = WorkDirectory + "/" + oldName;
+            var newFullName = WorkDirectory + "/" + newName;
+
+            File.Copy(oldFullName, newFullName);
+            files.Remove(oldName);
+            AddLocalFile(newName);
         }
 
         public void Dispose()

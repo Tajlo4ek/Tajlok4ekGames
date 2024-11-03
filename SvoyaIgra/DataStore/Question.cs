@@ -68,6 +68,16 @@ namespace DataStore
 
         public Question(List<Scenario> qScenario, List<Scenario> aScenario, int cost, QuestionType questionType)
         {
+            if (qScenario.Count == 0)
+            {
+                qScenario.Add(new Scenario("no question data", Scenario.ScenarioType.Text));
+            }
+
+            if (aScenario.Count == 0)
+            {
+                qScenario.Add(new Scenario("no answer data", Scenario.ScenarioType.Text));
+            }
+
             this.scenarios = qScenario.ToArray();
             this.answers = aScenario.ToArray();
             this.Cost = cost;

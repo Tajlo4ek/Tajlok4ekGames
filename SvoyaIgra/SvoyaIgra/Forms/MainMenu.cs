@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Net;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
 using Tajlo4ekUtils;
@@ -35,9 +36,9 @@ namespace SvoyaIgra.Forms
             instance = this;
         }
 
-        private bool ValidateIp()
+        private bool ValidateIp(out IPAddress addr)
         {
-            return System.Net.IPAddress.TryParse(tbInputIp.Text, out var _);
+            return IPAddress.TryParse(tbInputIp.Text, out addr);
         }
 
         private void BtnCreate_Click(object sender, EventArgs e)
@@ -60,10 +61,11 @@ namespace SvoyaIgra.Forms
                 }
             }
 
-            if (ValidateIp())
+            if (ValidateIp(out IPAddress addr))
             {
-                new Utils.Controllers.GameController(true, tbInputIp.Text, tbInputNick.Text, tbImg.Text, packPath);
-                this.Hide();
+                new Utils.Controllers.GameController(true, addr, tbInputNick.Text, tbImg.Text, packPath);
+                //TODO: uncomment
+                //this.Hide();
             }
             else
             {
@@ -74,10 +76,11 @@ namespace SvoyaIgra.Forms
         private void BtnJoin_Click(object sender, EventArgs e)
         {
             Save();
-            if (ValidateIp())
+            if (ValidateIp(out IPAddress addr))
             {
-                new Utils.Controllers.GameController(false, tbInputIp.Text, tbInputNick.Text, tbImg.Text);
-                this.Hide();
+                new Utils.Controllers.GameController(false, addr, tbInputNick.Text, tbImg.Text);
+                //TODO: uncomment
+                //this.Hide();
             }
             else
             {

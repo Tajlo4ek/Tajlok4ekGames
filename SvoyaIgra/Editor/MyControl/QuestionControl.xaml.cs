@@ -75,6 +75,11 @@ namespace Editor.MyControl
                 answers.Add(new Scenario("no text answer", Scenario.ScenarioType.Text));
             }
 
+            if (questions.Count == 0)
+            {
+                questions.Add(new Scenario("no text", Scenario.ScenarioType.Text));
+            }
+
             Question.QuestionType type = Question.QuestionType.Normal;
 
             if (cbType.Text.Equals(typeCatString))

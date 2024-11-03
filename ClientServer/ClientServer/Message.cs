@@ -18,7 +18,6 @@ namespace ClientServer
             SendReg = 4,
 
             FileProgress = 5,
-
         }
 
         public enum FileProgressMessageType
@@ -29,9 +28,10 @@ namespace ClientServer
             SendFilesProgress = 2,
             RecvFilesProgress = 3,
 
-            FileNotExists = 4,
-            FileReceived = 5,
-            FileSended = 6,
+            FileReceived = 4,
+            FileSended = 5,
+
+            FileNotExist = 6,
         };
 
         [JsonPropertyName("command")]
@@ -48,6 +48,9 @@ namespace ClientServer
 
         [JsonPropertyName("data")]
         public Dictionary<string, string> Data { get; set; }
+
+        [JsonIgnore]
+        public string OrigData { get; private set; }
 
         [JsonConstructor]
         public Message(string tokenFrom, string tokenTo, GeneralMessageType messageType = GeneralMessageType.User)
@@ -70,7 +73,9 @@ namespace ClientServer
 
         public static Message<TUserCommand> FromJson(string json)
         {
-            return JsonSerializer.Deserialize<Message<TUserCommand>>(json);
+            var message = JsonSerializer.Deserialize<Message<TUserCommand>>(json);
+            message.OrigData = json;
+            return message;
         }
 
         public Message<TUserCommand> Add(string key, object value)
@@ -80,14 +85,7 @@ namespace ClientServer
 
         public Message<TUserCommand> Add(string key, string value)
         {
-            if (Data.ContainsKey(key))
-            {
-                Data[key] = value;
-            }
-            else
-            {
-                Data.Add(key, value);
-            }
+            Data[key] = value;
             return this;
         }
 

@@ -114,12 +114,6 @@ namespace ClientServer
 
                     var messageFrom = Message<TUserCommand>.FromJson(data);
 
-                    if (messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
-                        && messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
-                    {
-                        Log("recv: " + data);
-                    }
-
                     CheckRecvMessage(messageFrom);
                 }
             }
@@ -173,14 +167,7 @@ namespace ClientServer
                 default:
                     break;
             }
-
         }
-
-        private void Log(string data)
-        {
-            Console.WriteLine(data);
-        }
-
     }
 }
 

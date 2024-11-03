@@ -13,11 +13,13 @@ namespace ClientServer
 
         public bool IsWrited { get { return nowSize == totalSize; } }
 
-
+        private readonly string path;
+        const string tempNameAdd = ".temp";
 
         public ReceivingFile(string path, string fileName, long totalSize, Action<ProgressFileData> onLoadCallaback, string fileToken)
             : base(fileToken, fileName)
         {
+            this.path = path;
             onLoadCallaback?.Invoke(ProgressData);
 
             var dirName = System.IO.Path.GetDirectoryName(path);
@@ -26,7 +28,7 @@ namespace ClientServer
                 Directory.CreateDirectory(dirName);
             }
 
-            _stream = new FileStream(path, FileMode.Create, FileAccess.Write);
+            _stream = new FileStream(path + tempNameAdd, FileMode.Create, FileAccess.Write);
             this.totalSize = totalSize;
             nowSize = 0;
 
@@ -56,6 +58,7 @@ namespace ClientServer
                 ProgressData.State = ProgressFileData.States.End;
                 _stream.Flush();
                 _stream.Close();
+                Tajlo4ekUtils.FileUtils.MoveWithReplace(path + tempNameAdd, path);
             }
         }
 

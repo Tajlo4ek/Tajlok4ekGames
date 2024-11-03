@@ -1,15 +1,23 @@
 ﻿using ClientServer;
+using ClientServer.FileUtils;
 using DataStore;
 using SvoyaIgra.Data;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Net;
 using System.Windows.Forms;
+using static SvoyaIgra.Data.MessageTypes;
 
 namespace SvoyaIgra.Utils.Controllers
 {
     public class GameController
     {
+        const int connectionPort = ClientServer.Utils.defaultPort + 1;
+
+        public static readonly string MyImgName = "myImg";
+        public static readonly string AdminImgName = "adminImg";
+
         public enum SkipType
         {
             Theme,
@@ -42,12 +50,12 @@ namespace SvoyaIgra.Utils.Controllers
 
         private readonly List<Data.User> users;
 
-        private const int timeToCheck = 10000;
-
         private const int timeWaitAnswerFinal = 60;
         private const int timeWaitAnswerNormal = 8;
 
         private bool isFinal;
+
+        private readonly string myName;
 
         public enum AnswerType
         {
@@ -97,12 +105,8 @@ namespace SvoyaIgra.Utils.Controllers
         private string userAnsToken = "";
         private string userChoiseToken = "";
 
-        private readonly string adminName;
-
         private bool isCanAnswer;
         private bool autoAnswer;
-
-        private readonly System.Timers.Timer checkTimer;
 
         private bool canChoise;
 
@@ -111,7 +115,7 @@ namespace SvoyaIgra.Utils.Controllers
         private readonly MyQueue<string> userTokenQueue;
 
 
-        public GameController(bool isServer, string ip, string name, string imgUrl, string packPath = null)
+        public GameController(bool isServer, IPAddress ip, string name, string imgUrl, string packPath = null)
         {
             mainFont = new Font("Arial", 40, FontStyle.Regular, GraphicsUnit.Point);
             choiceRects = new List<ChoiceRect>();
@@ -144,6 +148,7 @@ namespace SvoyaIgra.Utils.Controllers
             userAnsToken = "";
             userChoiseToken = "";
             nowShowText = "";
+            myName = name;
 
             if (isServer)
             {
@@ -167,39 +172,34 @@ namespace SvoyaIgra.Utils.Controllers
                     return;
                 }
 
-                loader.AddFile(loader.WorkDirectory + @"\" + DataStore.Utils.PackUtils.PackManager.BasePackName, DataStore.Utils.PackUtils.PackManager.BasePackName);
+                loader.AddLocalFile(DataStore.Utils.PackUtils.PackManager.BasePackName);
 
-                loader.LoadImg(imgUrl, Data.User.AdminImgName);
-                gameForm.SetAdminImage(loader.GetFilePath(Data.User.AdminImgName));
+                loader.LoadImg(imgUrl, AdminImgName);
+                gameForm.SetAdminImage(loader.GetRealPath(AdminImgName));
 
 
-                server = new ClientServer.Server<MessageTypes.MessageType>(ip, GetMessageToSend, OnServerError);
-                server.onGetMessage += OnGetMessage;
+                server = new ClientServer.Server<MessageTypes.MessageType>(ip, connectionPort);
+                server.onGetMessage += OnGetUserMassage;
+                server.onErrorAction += OnServerError;
+                server.NewUserConnect += ServerNewUserConnected;
+                server.OnFileLoadProgress += FileLoadProgress;
                 server.SetWorkPath(loader.WorkDirectory);
-                server.GetFilePath += GetFilePath;
 
-                this.adminName = name;
-
-                gameForm.SetAdminData(name);
-
-                checkTimer = new System.Timers.Timer();
-                checkTimer.Elapsed += CheckUsers;
-                checkTimer.Interval = timeToCheck;
-                checkTimer.Start();
+                gameForm.SetAdminName(name);
 
                 server.Start();
             }
             else
             {
                 loader = new DataStore.Utils.PackUtils.FileManager();
-                loader.LoadImg(imgUrl, Data.User.MyImgName);
+                loader.LoadImg(imgUrl, MyImgName);
 
-                client = new ClientServer.Client<MessageTypes.MessageType>(ip, name, OnClientError);
+                client = new ClientServer.Client<MessageTypes.MessageType>(ip, connectionPort);
+                client.onErrorAction += OnClientError;
                 client.SetWorkPath(loader.WorkDirectory);
-                client.GetMessageForServer += GetMessageToSend;
-                client.OnGetMessage += OnGetMessage;
-                client.OnFileLoadProcess += gameForm.AddToChat;
-                client.GetFilePath += GetFilePath;
+                client.OnGetMessage += OnGetUserMassage;
+                client.OnFileLoadProgress += FileLoadProgress;
+                client.OnServerConnected += ClientToServerConnected;
 
                 client.Start();
             }
@@ -211,21 +211,76 @@ namespace SvoyaIgra.Utils.Controllers
             isFinal = false;
         }
 
-        private void CheckUsers(object sender, System.Timers.ElapsedEventArgs e)
+        private void ServerNewUserConnected(string token)
         {
-            lock (users)
+            if (isServer)
             {
-                for (int userId = users.Count - 1; userId >= 0; userId--)
-                {
-                    if (!users[userId].IsActive)
+                var connectedUser = new Data.User(token);
+
+                users.Add(connectedUser);
+                ServerSendToUser(MessageType.SendAdminData, connectedUser.Token, new Dictionary<string, object> { { "name", myName } });
+            }
+
+            server.SendFile(token, DataStore.Utils.PackUtils.PackManager.BasePackName);
+            server.SendFile(token, AdminImgName);
+        }
+
+        private void ClientToServerConnected()
+        {
+            loader.RenameFile(MyImgName, client.MyToken);
+
+            ClientSendToServer(MessageType.SendUserData, new Dictionary<string, object> { { "name", myName } });
+            client.SendFile(client.ServerToken, client.MyToken);
+        }
+
+        private void FileLoadProgress(ProgressFileData data)
+        {
+            switch (data.State)
+            {
+                case ProgressFileData.States.Start:
                     {
-                        Kick(users[userId]);
+                        gameForm.AddToChat("загрузка: " + data.Name);
                     }
-                }
+                    break;
+
+                case ProgressFileData.States.End:
+                    {
+                        if (data.Name == DataStore.Utils.PackUtils.PackManager.BasePackName)
+                        {
+                            if (!isServer)
+                            {
+                                FileLoad(MessageTypes.FileType.Pack, data.Name);
+                            }
+                        }
+                        else if (data.Name == AdminImgName)
+                        {
+                            FileLoad(MessageTypes.FileType.AdminImg, data.Name);
+                        }
+                        else
+                        {
+                            FileLoad(MessageTypes.FileType.UserImg, data.Name);
+                        }
+                    }
+                    break;
+
+                case ProgressFileData.States.Error:
+                    {
+                        if (data.Name == DataStore.Utils.PackUtils.PackManager.BasePackName)
+                        {
+                            throw new Exception("error get pack from server");
+                        }
+                    }
+                    break;
+
+                case ProgressFileData.States.Process:
+                    {
+                        gameForm.AddToChat(data.Progress + "%");
+                    }
+                    break;
             }
         }
 
-        private void OnClientError(Exception ex)
+        private void OnClientError(Exception ex, string token)
         {
             if (state != State.End)
             {
@@ -244,26 +299,19 @@ namespace SvoyaIgra.Utils.Controllers
                 if (user == null || token == "")
                     return;
 
-                var message = new ClientServer.Message<MessageTypes.MessageType>()
-                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                    .SetCommand(MessageTypes.MessageType.Kick)
-                    .Add("token", token);
-
-                AddMessageForAll(message);
+                ServerBroadcastMessage(MessageType.Kick, new Dictionary<string, object> { { "token", token } });
             }
         }
 
         private void OnClose()
         {
             loader.Dispose();
-            checkTimer?.Stop();
-            checkTimer?.Dispose();
 
             client?.Stop();
             server?.Stop();
         }
 
-        private void FileLoad(MessageTypes.FileType type, string filePath)
+        private void FileLoad(MessageTypes.FileType type, string fileName)
         {
             switch (type)
             {
@@ -271,13 +319,9 @@ namespace SvoyaIgra.Utils.Controllers
                     {
                         if (!isServer)
                         {
-                            package = loader.LoadPack(filePath);
-
-                            var message = new ClientServer.Message<MessageTypes.MessageType>()
-                                .SetToken(client.Token)
-                                .SetCommand(MessageTypes.MessageType.Ready);
-
-                            users[0].AddDataToSend(message);
+                            package = loader.LoadPackFromLocal(fileName);
+                            ClientSendToServer(MessageTypes.MessageType.PackLoaded);
+                            ClientSendToServer(MessageTypes.MessageType.Ready);
                         }
                     }
                     break;
@@ -286,35 +330,26 @@ namespace SvoyaIgra.Utils.Controllers
                     {
                         if (!isServer)
                         {
-                            loader.AddFile(filePath, Data.User.AdminImgName);
-                            gameForm.SetAdminImage(filePath);
+                            loader.AddLocalFile(AdminImgName);
+                            gameForm.SetAdminImage(loader.GetRealPath(AdminImgName));
                         }
                     }
                     break;
 
                 case MessageTypes.FileType.UserImg:
                     {
-                        var imgName = filePath.Substring(filePath.LastIndexOf(@"\") + 1);
-                        loader.AddFile(filePath, imgName);
-
-                        var ind = imgName.LastIndexOf(".");
-                        if (ind != -1)
-                        {
-                            imgName = imgName.Substring(0, ind);
-                        }
-
-                        gameForm.AddUserImage(imgName, filePath);
+                        loader.AddLocalFile(fileName);
+                        gameForm.AddUserImage(fileName, loader.GetRealPath(fileName));
 
                         if (isServer)
                         {
-                            var message = new ClientServer.Message<MessageTypes.MessageType>()
-                                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                .SetCommand(MessageTypes.MessageType.AvailableImage)
-                                .Add("imageName", imgName);
-
-                            AddMessageForAll(message);
-
-                            GetUser(imgName)?.SetImgAvailable(true);
+                            lock (users)
+                            {
+                                foreach (var user in users)
+                                {
+                                    server.SendFile(user.Token, fileName);
+                                }
+                            }
                         }
 
                     }
@@ -324,52 +359,93 @@ namespace SvoyaIgra.Utils.Controllers
 
         private void OnGetUserMassage(ClientServer.Message<MessageTypes.MessageType> message)
         {
-            string messageToken = message.Token;
+            if (state == State.End)
+            {
+                return;
+            }
 
             switch (message.Command)
             {
                 case MessageTypes.MessageType.AddToChat:
                     {
-                        if (isServer)
-                        {
-                            AddMessageForAll(message);
-                        }
-
-                        gameForm.AddToChat(message.GetData("data"));
+                        gameForm.AddToChat(message.GetData<string>("data"));
                     }
                     break;
 
                 case MessageTypes.MessageType.SendUserData:
                     {
-                        var userToken = message.GetData("token");
-
-                        if (users.Find((user) => user.Token.Equals(userToken)) != null)
-                            break;
-
-                        var userName = message.GetData("name");
-                        var userMoney = message.GetData("money");
-                        if (userMoney.Equals(""))
+                        if (isServer)
                         {
-                            userMoney = "0";
+                            if (TryGetUser(message.TokenFrom, out User user) == false)
+                            {
+                                return;
+                            }
+                            var name = message.GetData<string>("name");
+
+                            user.SetName(name);
+                            gameForm.AddUserData(name, 0, user.Token);
+
+                            ServerBroadcastMessage(
+                                MessageType.SendUserData,
+                                new Dictionary<string, object> {
+                                    { "token", user.Token },
+                                    { "name", name },
+                                    { "money", 0 },
+                                });
+
+                            lock (users)
+                            {
+                                foreach (var uData in users)
+                                {
+                                    ServerSendToUser(
+                                        MessageType.SendUserData,
+                                        user.Token,
+                                        new Dictionary<string, object> {
+                                            { "token", uData.Token },
+                                            { "name", uData.Name },
+                                            { "money", 0 },
+                                        });
+
+                                    server.SendFile(user.Token, uData.Token);
+                                }
+                            }
+
+                            ServerBroadcastMessage(
+                                MessageType.AddToChat,
+                                new Dictionary<string, object> {
+                                    { "data", name + " connect"}
+                                });
                         }
-
-                        var userSend = new Data.User(userToken, userName, isServer);
-                        users.Add(userSend);
-
-                        gameForm.AddUserData(userName, userMoney, userToken);
-                        if (userToken.Equals(client.Token))
+                        else
                         {
-                            loader.RenameFile(Data.User.MyImgName, userToken);
-                            gameForm.AddUserImage(userToken, loader.GetFilePath(userToken));
+                            var userToken = message.GetData<string>("token");
 
-                            var imageMessage = new ClientServer.Message<MessageTypes.MessageType>(
-                                ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.SendFile)
-                                    .SetToken(client.Token)
-                                    .Add("fileName", client.Token);
+                            if (TryGetUser(message.TokenFrom, out User user) != false)
+                            {
+                                return;
+                            }
 
-                            users[0].AddDataToSend(imageMessage);
+                            var userName = message.GetData<string>("name");
+                            var userMoney = message.GetData<int>("money");
+
+                            users.Add(new Data.User(userToken, userName));
+                            gameForm.AddUserData(userName, userMoney, userToken);
                         }
+                    }
+                    break;
 
+                case MessageType.PackLoaded:
+                    {
+                        if (isGameStarted)
+                        {
+                            if (TryGetUser(message.TokenFrom, out User user) == false)
+                            {
+                                return;
+                            }
+
+                            ServerSendToUser(MessageType.SendUsedQuestion, user.Token, CurrentQuestionMessageData());
+                            ServerSendToUser(MessageType.ForseShowMain, user.Token, new Dictionary<string, object> { { "round", nowRound } });
+                        }
                     }
                     break;
 
@@ -378,7 +454,7 @@ namespace SvoyaIgra.Utils.Controllers
 
                         if (!isGameStarted)
                         {
-                            nowRound = int.Parse(message.GetData("round"));
+                            nowRound = message.GetData<int>("round");
 
                             isGamePaused = false;
                             isGameStarted = true;
@@ -398,11 +474,11 @@ namespace SvoyaIgra.Utils.Controllers
 
                 case MessageTypes.MessageType.Ready:
                     {
-                        users.Find((user) => user.Token.Equals(messageToken))?.SetReady();
+                        users.Find((user) => user.Token.Equals(message.TokenFrom))?.SetReady();
 
-                        isAllready = true;
-                        users.ForEach((user) => isAllready &= user.IsReady);
-
+                        bool bufAllReady = true;
+                        users.ForEach((user) => bufAllReady &= user.IsReady);
+                        isAllready = bufAllReady;
                     }
                     break;
 
@@ -410,34 +486,25 @@ namespace SvoyaIgra.Utils.Controllers
                     {
                         if (isServer)
                         {
-                            int round = int.Parse(message.GetData("round"));
-                            int theme = int.Parse(message.GetData("theme"));
-                            int question = int.Parse(message.GetData("question"));
+                            int round = message.GetData<int>("round");
+                            int theme = message.GetData<int>("theme");
+                            int question = message.GetData<int>("question");
 
                             ShowQuestion(round, theme, question);
 
-                            var sendMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                .SetCommand(MessageTypes.MessageType.ShowQuestion)
-                                .Add("round", message.GetData("round"))
-                                .Add("theme", message.GetData("theme"))
-                                .Add("question", message.GetData("question"));
+                            ServerBroadcastMessage(
+                                MessageType.ShowQuestion,
+                                new Dictionary<string, object> {
+                                    {"round", round },
+                                    {"theme", theme },
+                                    {"question", question }
+                                });
 
-                            AddMessageForAll(sendMessage);
-
-                            userChoiseToken = "";
-                            for (int userId = 0; userId < users.Count; userId++)
-                            {
-                                if (users[userId].Token.Equals(message.Token))
-                                {
-                                    userChoiseToken = users[userId].Token;
-                                }
-                            }
-
+                            userChoiseToken = message.TokenFrom;
                         }
                         else
                         {
-                            canChoise = message.GetData("token").Equals(client.Token);
+                            canChoise = true;
                             nextState = State.ShowMain;
                             OnEndAct();
                         }
@@ -446,9 +513,9 @@ namespace SvoyaIgra.Utils.Controllers
 
                 case MessageTypes.MessageType.ShowQuestion:
                     {
-                        int round = int.Parse(message.GetData("round"));
-                        int theme = int.Parse(message.GetData("theme"));
-                        int question = int.Parse(message.GetData("question"));
+                        int round = message.GetData<int>("round");
+                        int theme = message.GetData<int>("theme");
+                        int question = message.GetData<int>("question");
 
                         ShowQuestion(round, theme, question);
 
@@ -464,7 +531,7 @@ namespace SvoyaIgra.Utils.Controllers
                     {
                         if (!isServer)
                         {
-                            canChoise = message.GetData("token").Equals(client.Token);
+                            canChoise = true;
                             nextState = State.ShowFinalThemes;
                             OnEndAct();
                         }
@@ -485,7 +552,10 @@ namespace SvoyaIgra.Utils.Controllers
 
                         if (isServer)
                         {
-                            Data.User findUser = GetUser(messageToken);
+                            if (TryGetUser(message.TokenFrom, out User findUser) == false)
+                            {
+                                return;
+                            }
 
                             if (findUser == null)
                             {
@@ -508,11 +578,7 @@ namespace SvoyaIgra.Utils.Controllers
                             //TODO: 
                             if (isCanAnswer || true)
                             {
-                                var messageSend = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.SetPause);
-
-                                AddMessageForAll(messageSend);
+                                ServerBroadcastMessage(MessageType.SetPause);
 
                                 gameForm.Pause();
                                 gameForm.ShowAnsMenu(true);
@@ -523,17 +589,18 @@ namespace SvoyaIgra.Utils.Controllers
                             }
                             else if (state == State.ShowQuestion && nowQuestion.IsNormal)
                             {
-                                gameForm.AddToChat(findUser.Name + " фальстарт");
+                                var text = findUser.Name + " фальстарт";
 
-                                var sendMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.AddToChat)
-                                    .Add("data", findUser.Name + " фальстарт");
+                                gameForm.AddToChat(text);
 
                                 findUser.SetCanAnswer(false);
                                 userAnsToken = "";
 
-                                AddMessageForAll(sendMessage);
+                                ServerBroadcastMessage(
+                                    MessageType.AddToChat,
+                                    new Dictionary<string, object> {
+                                        { "data", text }
+                                    });
                             }
                             else
                             {
@@ -553,36 +620,37 @@ namespace SvoyaIgra.Utils.Controllers
 
                 case MessageTypes.MessageType.AdminSay:
                     {
-                        gameForm.SetAdminSay(message.GetData("text"));
+                        gameForm.SetAdminSay(message.GetData<string>("text"));
                     }
                     break;
 
                 case MessageTypes.MessageType.UpdateMoney:
                     {
-                        var userToken = message.GetData("token");
+                        var userToken = message.GetData<string>("token");
 
-                        var user = GetUser(userToken);
-                        if (user != null)
+                        if (TryGetUser(userToken, out User user) == false)
                         {
-                            var userMoney = message.GetData("money");
-                            user.Money = int.Parse(userMoney);
-                            gameForm.UpdateMoney(userToken, userMoney);
+                            return;
                         }
+
+                        user.Money = message.GetData<int>("money");
+                        gameForm.UpdateMoney(userToken, user.Money);
+
                     }
                     break;
 
                 case MessageTypes.MessageType.SendAdminData:
                     {
-                        gameForm.SetAdminData(message.GetData("name"));
+                        gameForm.SetAdminName(message.GetData<string>("name"));
                     }
                     break;
 
                 case MessageTypes.MessageType.Kick:
                     {
-                        var token = message.GetData("token");
+                        var token = message.GetData<string>("token");
                         if (!isServer)
                         {
-                            if (client.Token.Equals(token))
+                            if (client.MyToken.Equals(token))
                             {
                                 state = State.End;
                                 nextState = State.End;
@@ -612,7 +680,7 @@ namespace SvoyaIgra.Utils.Controllers
                         {
                             gameForm.SetCanChoise(false);
                             isGameStarted = true;
-                            nowRound = int.Parse(message.GetData("round"));
+                            nowRound = message.GetData<int>("round");
                             nowQuestion = null;
                             gameForm.FinishMedia(false);
                             state = State.ShowAnswer;
@@ -624,12 +692,12 @@ namespace SvoyaIgra.Utils.Controllers
 
                 case MessageTypes.MessageType.SendUsedQuestion:
                     {
-                        int count = int.Parse(message.GetData("count"));
-                        nowRound = int.Parse(message.GetData("round"));
+                        int count = message.GetData<int>("count");
+                        nowRound = message.GetData<int>("round");
 
                         for (int i = 0; i < count; i++)
                         {
-                            var str = message.GetData(i.ToString()).Split(' ');
+                            var str = message.GetData<string>(i.ToString()).Split(' ');
 
                             var roundId = int.Parse(str[0]);
                             var themeId = int.Parse(str[1]);
@@ -649,7 +717,7 @@ namespace SvoyaIgra.Utils.Controllers
                         {
                             if (nowQuestion.IsNormal)
                             {
-                                int time = int.Parse(message.GetData("timeSec"));
+                                int time = message.GetData<int>("timeSec");
                                 gameForm.WaitAnswer(time, "");
                                 if (isFinal)
                                 {
@@ -665,31 +733,18 @@ namespace SvoyaIgra.Utils.Controllers
                     }
                     break;
 
-                case MessageTypes.MessageType.AvailableImage:
-                    {
-                        var imgName = message.GetData("imageName");
-
-                        if (!client.Token.Equals(imgName))
-                        {
-                            var sendMessage = new ClientServer.Message<MessageTypes.MessageType>(
-                                ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.GetFile)
-                                    .SetToken(client.Token)
-                                    .Add("fileName", imgName);
-
-                            users[0].AddDataToSend(sendMessage);
-                        }
-                    }
-                    break;
-
                 case MessageTypes.MessageType.UserClickUser:
                     {
-                        string token = message.GetData("token");
+                        string token = message.GetData<string>("token");
 
                         if (isServer)
                         {
                             gameForm.SetCanChoise(false);
 
-                            var user = GetUser(token);
+                            if (TryGetUser(token, out User user) == false)
+                            {
+                                return;
+                            }
 
                             foreach (var userCheck in users)
                             {
@@ -699,15 +754,8 @@ namespace SvoyaIgra.Utils.Controllers
 
                             AdminSay(user.Name + ", вопрос для вас");
 
-                            user.AddDataToSend(
-                                new ClientServer.Message<MessageTypes.MessageType>()
-                                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                .SetCommand(MessageTypes.MessageType.StartAutoAnswer));
-
-                            AddMessageForAll(
-                                new ClientServer.Message<MessageTypes.MessageType>()
-                                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                .SetCommand(MessageTypes.MessageType.ForceShowQuestion));
+                            ServerSendToUser(MessageType.StartAutoAnswer, user.Token);
+                            ServerBroadcastMessage(MessageType.ForceShowQuestion);
 
                             userChoiseToken = token;
 
@@ -750,13 +798,16 @@ namespace SvoyaIgra.Utils.Controllers
                     {
                         if (isServer)
                         {
-                            var user = GetUser(messageToken);
+                            if (TryGetUser(message.TokenFrom, out User user) == false)
+                            {
+                                return;
+                            }
 
                             int rate = 0;
 
                             if (user != null)
                             {
-                                rate = int.Parse(message.GetData("rate"));
+                                rate = message.GetData<int>("rate");
                                 if (rate <= 0)
                                 {
                                     rate = -1;
@@ -802,7 +853,10 @@ namespace SvoyaIgra.Utils.Controllers
 
                             if (userTokenQueue.Count == 1)
                             {
-                                user = GetUser(userTokenQueue.Dequeue());
+                                if (TryGetUser(userTokenQueue.Dequeue(), out user) == false)
+                                {
+                                    return;
+                                }
 
                                 foreach (var checkUser in users)
                                 {
@@ -810,16 +864,8 @@ namespace SvoyaIgra.Utils.Controllers
                                 }
                                 user.SetCanAnswer(true);
 
-                                user.AddDataToSend(
-                                    new ClientServer.Message<MessageTypes.MessageType>()
-                                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                        .SetCommand(MessageTypes.MessageType.StartAutoAnswer));
-
-                                AddMessageForAll(
-                                    new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.ForceShowQuestion));
-
+                                ServerSendToUser(MessageType.StartAutoAnswer, user.Token);
+                                ServerBroadcastMessage(MessageType.ForceShowQuestion);
                                 AdminSay(user.Name + " вопрос для вас");
 
                                 userChoiseToken = user.Token;
@@ -829,7 +875,10 @@ namespace SvoyaIgra.Utils.Controllers
                             }
                             else
                             {
-                                var nextUser = GetUser(userTokenQueue.Peek());
+                                if (TryGetUser(userTokenQueue.Peek(), out User nextUser) == false)
+                                {
+                                    return;
+                                }
 
                                 var minValue = maxRate + AuctionStep;
                                 var maxValue = nextUser.Money;
@@ -840,28 +889,27 @@ namespace SvoyaIgra.Utils.Controllers
                                     maxValue = nextUser.Money;
                                     isSomeAllIn = true;
                                 }
-
-                                var sendMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(nextUser.Token)
-                                    .SetCommand(MessageTypes.MessageType.AuctionChoice)
-                                    .Add("minValue", minValue.ToString())
-                                    .Add("maxValue", maxValue.ToString())
-                                    .Add("canPass", true.ToString())
-                                    .Add("canAllIn", true.ToString())
-                                    .Add("canSet", (!isSomeAllIn).ToString());
-
-                                nextUser.AddDataToSend(sendMessage);
+                                ServerSendToUser(
+                                    MessageType.AuctionChoice,
+                                    nextUser.Token,
+                                    new Dictionary<string, object> {
+                                        { "minValue", minValue },
+                                        { "maxValue", maxValue },
+                                        { "canPass", true },
+                                        { "canAllIn", true },
+                                        { "canSet", !isSomeAllIn }
+                                    });
                             }
 
                         }
                         else
                         {
-                            var minValue = int.Parse(message.GetData("minValue"));
-                            var maxValue = int.Parse(message.GetData("maxValue"));
+                            var minValue = message.GetData<int>("minValue");
+                            var maxValue = message.GetData<int>("maxValue");
 
-                            var canPass = bool.Parse(message.GetData("canPass"));
-                            var canAllIn = bool.Parse(message.GetData("canAllIn"));
-                            var canSet = bool.Parse(message.GetData("canSet"));
+                            var canPass = message.GetData<bool>("canPass");
+                            var canAllIn = message.GetData<bool>("canAllIn");
+                            var canSet = message.GetData<bool>("canSet");
 
                             gameForm.ShowAuction(minValue, maxValue, canPass, canAllIn, canSet);
                         }
@@ -872,8 +920,8 @@ namespace SvoyaIgra.Utils.Controllers
                     {
                         if (!isServer)
                         {
-                            nowShowText = message.GetData("text");
-                            bool show = bool.Parse(message.GetData("show"));
+                            nowShowText = message.GetData<string>("text");
+                            bool show = message.GetData<bool>("show");
                             if (show)
                             {
                                 nextState = State.ShowText;
@@ -897,14 +945,13 @@ namespace SvoyaIgra.Utils.Controllers
 
                 case MessageTypes.MessageType.FinalKickTheme:
                     {
-                        if (!(messageToken.Equals(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            || messageToken.Equals(userTokenQueue.Peek())))
+                        if (message.TokenFrom.Equals(userTokenQueue.Peek()) != true)
                         {
                             break;
                         }
 
-                        int roundId = int.Parse(message.GetData("round"));
-                        int themeId = int.Parse(message.GetData("theme"));
+                        int roundId = message.GetData<int>("round");
+                        int themeId = message.GetData<int>("theme");
 
                         package.GetRound(roundId).GetTheme(themeId).SetUsed();
 
@@ -927,22 +974,18 @@ namespace SvoyaIgra.Utils.Controllers
                             {
                                 nowShowText = "Играем тему " + round.GetTheme(playTheme).Name + "\n\n Делайте Ваши ставки";
 
-                                var messageSend = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.AddTextToMainScreen)
-                                    .Add("text", nowShowText)
-                                    .Add("show", true.ToString());
-                                AddMessageForAll(messageSend);
-
-                                messageSend = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.FinalRate);
+                                ServerBroadcastMessage(
+                                    MessageType.AddTextToMainScreen,
+                                    new Dictionary<string, object> {
+                                        { "text", nowShowText },
+                                        { "show", true }
+                                    });
 
                                 foreach (var checkUser in users)
                                 {
                                     if (checkUser.Money > 0)
                                     {
-                                        checkUser.AddDataToSend(messageSend);
+                                        ServerSendToUser(MessageType.FinalRate, checkUser.Token);
                                         checkUser.SetRate(0);
                                     }
                                     else
@@ -957,12 +1000,12 @@ namespace SvoyaIgra.Utils.Controllers
                             }
                             else
                             {
-                                var sendMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                                   .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                   .SetCommand(MessageTypes.MessageType.FinalKickTheme)
-                                   .Add("round", roundId.ToString())
-                                   .Add("theme", themeId.ToString());
-                                AddMessageForAll(sendMessage);
+                                ServerBroadcastMessage(
+                                    MessageType.FinalKickTheme,
+                                    new Dictionary<string, object> {
+                                        { "round", roundId },
+                                        { "theme", themeId }
+                                    });
 
                                 NextUserMove();
                             }
@@ -983,10 +1026,9 @@ namespace SvoyaIgra.Utils.Controllers
                         }
                         else
                         {
-                            var user = GetUser(messageToken);
-                            if (user != null)
+                            if (TryGetUser(message.TokenFrom, out User user) != false)
                             {
-                                int rate = int.Parse(message.GetData("rate"));
+                                int rate = message.GetData<int>("rate");
                                 if (rate > user.Money || rate <= 0)
                                 {
                                     rate = -1;
@@ -1014,188 +1056,15 @@ namespace SvoyaIgra.Utils.Controllers
 
                 case MessageTypes.MessageType.FinalAnswer:
                     {
-                        var user = GetUser(messageToken);
-                        user?.SetFinalAns(message.GetData("data"));
+                        if (TryGetUser(message.TokenFrom, out User user) == false)
+                        {
+                            return;
+                        }
+
+                        user.SetFinalAns(message.GetData<string>("data"));
                     }
                     break;
             }
-        }
-
-        private void OnGetMessage(ClientServer.Message<MessageTypes.MessageType> message)
-        {
-            if (state == State.End)
-            {
-                return;
-            }
-
-
-            var messageToken = message.Token;
-
-            lock (users)
-            {
-                if (isServer)
-                {
-                    users.ForEach((user) => { if (user.Token.Equals(messageToken)) { user.Update(); } });
-                }
-
-                switch (message.MessageType)
-                {
-                    case ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.FileRecived:
-                        {
-                            string fileName = message.GetData("fileName");
-                            string filePath = message.GetData("filePath");
-
-                            if (fileName == DataStore.Utils.PackUtils.PackManager.BasePackName)
-                            {
-                                FileLoad(MessageTypes.FileType.Pack, filePath);
-                            }
-                            else if (fileName == User.AdminImgName)
-                            {
-                                FileLoad(MessageTypes.FileType.AdminImg, filePath);
-                            }
-                            else
-                            {
-                                FileLoad(MessageTypes.FileType.UserImg, filePath);
-                            }
-                        }
-                        break;
-
-                    case ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.SendReg:
-                        {
-                            if (isServer == false)
-                            {
-                                var userDataMessage = new Message<MessageTypes.MessageType>(
-                                    Message<MessageTypes.MessageType>.GeneralMessageType.User)
-                                    .SetToken(Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.SendUserData)
-                                    .Add("name", message.GetData("name"))
-                                    .Add("token", message.GetData("token"));
-                                OnGetMessage(userDataMessage);
-                            }
-                        }
-                        break;
-
-                    case ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.GetReg:
-                        {
-                            if (isServer)
-                            {
-                                var userName = message.GetData("name");
-
-                                var connectedUser = new Data.User(messageToken, userName, isServer);
-
-                                users.Add(connectedUser);
-                                gameForm.AddToChat(userName + " connect");
-
-                                var sendMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.AddToChat)
-                                    .Add("data", userName + " connect");
-
-                                AddMessageForAll(sendMessage);
-
-
-                                var sendUserData = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.SendUserData)
-                                    .Add("token", connectedUser.Token)
-                                    .Add("name", connectedUser.Name)
-                                    .Add("money", connectedUser.Money.ToString());
-                                AddMessageForAll(sendUserData);
-
-                                foreach (var userFrom in users)
-                                {
-                                    sendUserData = new ClientServer.Message<MessageTypes.MessageType>()
-                                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                        .SetCommand(MessageTypes.MessageType.SendUserData)
-                                        .Add("token", userFrom.Token)
-                                        .Add("name", userFrom.Name)
-                                        .Add("money", userFrom.Money.ToString());
-                                    connectedUser.AddDataToSend(sendUserData);
-
-                                    if (userFrom.IsImgAvailable)
-                                    {
-                                        var imgAvailableMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                            .SetCommand(MessageTypes.MessageType.AvailableImage)
-                                            .Add("imageName", userFrom.Token);
-
-                                        connectedUser.AddDataToSend(imgAvailableMessage);
-                                    }
-
-                                }
-
-                                gameForm.AddUserData(userName, "0", messageToken);
-
-                                var adminData = new ClientServer.Message<MessageTypes.MessageType>()
-                                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                    .SetCommand(MessageTypes.MessageType.SendAdminData)
-                                    .Add("name", adminName);
-
-                                connectedUser.AddDataToSend(adminData);
-
-
-                                if (isGameStarted)
-                                {
-                                    SendRoundData(connectedUser);
-
-                                    var message1 = new ClientServer.Message<MessageTypes.MessageType>()
-                                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                        .SetCommand(MessageTypes.MessageType.ForseShowMain)
-                                        .Add("round", nowRound.ToString());
-
-                                    connectedUser.AddDataToSend(message1);
-                                }
-
-                            }
-                        }
-                        break;
-
-                    case ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.SendFile:
-                    case ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.GetFile:
-                        {
-                            if (isServer)
-                            {
-                                users.Find((x) => x.Token.Equals(messageToken))?.StartLoadFile();
-                            }
-                        }
-                        break;
-
-                    case ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.FileSended:
-                        {
-                            if (isServer)
-                            {
-                                users.Find((x) => x.Token.Equals(messageToken)).FileLoaded();
-                            }
-                        }
-                        break;
-
-                    case ClientServer.Message<MessageTypes.MessageType>.GeneralMessageType.User:
-                        {
-                            OnGetUserMassage(message);
-                        }
-                        break;
-
-                }
-            }
-        }
-
-        private ClientServer.Message<MessageTypes.MessageType> GetMessageToSend(string token)
-        {
-            lock (users)
-            {
-                foreach (var user in users)
-                {
-                    if (user.Token.Equals(token))
-                    {
-                        return user.GetMessage();
-                    }
-                }
-            }
-
-            return new ClientServer.Message<MessageTypes.MessageType>()
-                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                .SetCommand(MessageTypes.MessageType.Kick)
-                .Add("token", token);
         }
 
         private Image GenerateMain()
@@ -1440,18 +1309,12 @@ namespace SvoyaIgra.Utils.Controllers
 
                                     gameForm.SetCanChoise(false);
 
-                                    var trueMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                        .SetCommand(isFinal ?
-                                                MessageTypes.MessageType.ChoiseTheme :
-                                                MessageTypes.MessageType.ChoiseQuestion)
-                                        .Add("token", userChoiseToken);
+                                    ServerBroadcastMessage(
+                                        isFinal ? MessageTypes.MessageType.ChoiseTheme : MessageTypes.MessageType.ChoiseQuestion,
+                                        new Dictionary<string, object> { { "token", userChoiseToken } });
 
-                                    AddMessageForAll(trueMessage);
 
-                                    var findUser = GetUser(userChoiseToken);
-
-                                    if (findUser != null)
+                                    if (TryGetUser(userChoiseToken, out User findUser) == true)
                                     {
                                         if (isFinal)
                                         {
@@ -1512,10 +1375,7 @@ namespace SvoyaIgra.Utils.Controllers
                     gameForm.ShowImageBackground(img, -1);
                     if (!isServer)
                     {
-                        var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(client.Token)
-                            .SetCommand(MessageTypes.MessageType.Ready);
-                        users[0].AddDataToSend(message);
+                        ClientSendToServer(MessageTypes.MessageType.Ready);
                     }
                     else
                     {
@@ -1624,18 +1484,22 @@ namespace SvoyaIgra.Utils.Controllers
                 {
                     userAnsToken = userTokenQueue.Peek();
 
-                    var user = GetUser(userAnsToken);
+                    if (TryGetUser(userAnsToken, out User user) == false)
+                    {
+                        return;
+                    }
+
                     nowShowText = user.Name;
                     nowShowText += "\nОтвет: " + user.FinalAns;
                     nowShowText += "\nСтавка: " + user.Rate;
                     gameForm.ShowImageBackground(GetCurrentImage(), -1);
 
-                    var messageSend = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.AddTextToMainScreen)
-                            .Add("text", nowShowText)
-                            .Add("show", true.ToString());
-                    AddMessageForAll(messageSend);
+                    ServerBroadcastMessage(
+                        MessageType.AddTextToMainScreen,
+                        new Dictionary<string, object> {
+                            {"text", nowShowText },
+                            {"show", true }
+                        });
 
                     gameForm.ShowAnsMenu(true);
                 }
@@ -1713,12 +1577,10 @@ namespace SvoyaIgra.Utils.Controllers
                     isCanAnswer = true;
                     nextState = State.WaitAnswer;
 
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                        .SetCommand(MessageTypes.MessageType.StartCanAnswer)
-                        .Add("timeSec", isFinal ? timeWaitAnswerFinal.ToString() : timeWaitAnswerNormal.ToString());
-
-                    AddMessageForAll(message);
+                    ServerBroadcastMessage(MessageType.StartCanAnswer,
+                        new Dictionary<string, object> {
+                            { "timeSec", isFinal ? timeWaitAnswerFinal : timeWaitAnswerNormal }
+                        });
 
                     OnEndAct();
                 }
@@ -1735,10 +1597,7 @@ namespace SvoyaIgra.Utils.Controllers
         {
             if (isServer && nowAnswerScenario == 0)
             {
-                var message = new ClientServer.Message<MessageTypes.MessageType>()
-                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                    .SetCommand(MessageTypes.MessageType.ShowAnswer);
-                AddMessageForAll(message);
+                ServerBroadcastMessage(MessageTypes.MessageType.ShowAnswer);
             }
 
             autoAnswer = false;
@@ -1779,12 +1638,7 @@ namespace SvoyaIgra.Utils.Controllers
             {
                 if (isServer)
                 {
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                        .SetCommand(MessageTypes.MessageType.ForseShowMain)
-                        .Add("round", nowRound.ToString());
-
-                    AddMessageForAll(message);
+                    ServerBroadcastMessage(MessageType.ForseShowMain, new Dictionary<string, object> { { "round", nowRound } });
 
                     nowAnswerScenario = 0;
                     nextState = State.ShowMain;
@@ -1904,26 +1758,25 @@ namespace SvoyaIgra.Utils.Controllers
                     nextState = State.ShowMain;
                     OnEndAct();
 
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(client.Token)
-                        .SetCommand(MessageTypes.MessageType.ChoiseQuestion)
-                        .Add("round", nowRound.ToString())
-                        .Add("theme", lastClickedRect.ThemeId.ToString())
-                        .Add("question", lastClickedRect.QuestionId.ToString());
-
-                    users[0].AddDataToSend(message);
+                    ClientSendToServer(
+                        MessageType.ChoiseQuestion,
+                        new Dictionary<string, object> {
+                            {"round", nowRound },
+                            {"theme", lastClickedRect.ThemeId },
+                            {"question", lastClickedRect.QuestionId}
+                        });
                 }
                 else
                 {
                     nextState = State.ShowFinalThemes;
 
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(client.Token)
-                        .SetCommand(MessageTypes.MessageType.FinalKickTheme)
-                        .Add("round", nowRound.ToString())
-                        .Add("theme", lastClickedRect.ThemeId.ToString());
+                    ClientSendToServer(
+                        MessageType.FinalKickTheme,
+                        new Dictionary<string, object> {
+                            {"round", nowRound },
+                            {"theme", lastClickedRect.ThemeId }
+                        });
 
-                    users[0].AddDataToSend(message);
                 }
             }
             else
@@ -1933,26 +1786,27 @@ namespace SvoyaIgra.Utils.Controllers
                     if (state == State.ChoiseQuestion)
                     {
                         userChoiseToken = "";
-                        var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.ShowQuestion)
-                            .Add("round", nowRound.ToString())
-                            .Add("theme", lastClickedRect.ThemeId.ToString())
-                            .Add("question", lastClickedRect.QuestionId.ToString());
-                        AddMessageForAll(message);
+
+                        ServerBroadcastMessage(
+                            MessageType.ShowQuestion,
+                            new Dictionary<string, object> {
+                                {"round", nowRound },
+                                {"theme", lastClickedRect.ThemeId },
+                                {"question", lastClickedRect.QuestionId }
+                            });
 
                         ShowQuestion(nowRound, lastClickedRect.ThemeId, lastClickedRect.QuestionId);
                     }
                     else
                     {
                         userChoiseToken = "";
-                        var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.FinalKickTheme)
-                            .Add("round", nowRound.ToString())
-                            .Add("theme", lastClickedRect.ThemeId.ToString());
 
-                        AddMessageForAll(message);
+                        ServerBroadcastMessage(
+                            MessageType.FinalKickTheme,
+                            new Dictionary<string, object> {
+                                {"round", nowRound },
+                                {"theme", lastClickedRect.ThemeId },
+                            });
                     }
                 }
                 else if (button == MouseButtons.Right)
@@ -1974,14 +1828,15 @@ namespace SvoyaIgra.Utils.Controllers
                 nextState = State.Bagcat;
                 if (isServer)
                 {
-                    var user = GetUser(userChoiseToken);
+                    if (TryGetUser(userChoiseToken, out User user) == false)
+                    {
+                        return;
+                    }
+
                     AdminSay("Кому?");
                     if (user != null)
                     {
-                        var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.CanChoiceUser);
-                        user.AddDataToSend(message);
+                        ServerSendToUser(MessageType.CanChoiceUser, user.Token);
                     }
                     gameForm.SetCanChoise(true);
                 }
@@ -1993,16 +1848,10 @@ namespace SvoyaIgra.Utils.Controllers
                 {
                     lock (users)
                     {
-                        var user = GetUser(userChoiseToken) ?? users[new Random().Next(users.Count)];
-                        var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.AuctionChoice)
-                            .Add("minValue", nowQuestion.Cost.ToString())
-                            .Add("maxValue", user.Money.ToString())
-                            .Add("canPass", false.ToString())
-                            .Add("canAllIn", (user.Money >= nowQuestion.Cost).ToString())
-                            .Add("canSet", true.ToString());
-
+                        if (TryGetUser(userChoiseToken, out User user) == false)
+                        {
+                            user = users[new Random().Next(users.Count)];
+                        }
 
                         foreach (var checkUser in users)
                         {
@@ -2011,7 +1860,16 @@ namespace SvoyaIgra.Utils.Controllers
 
                         CreateQueueByMoney(user.Token);
 
-                        user.AddDataToSend(message);
+                        ServerSendToUser(
+                            MessageType.AuctionChoice,
+                            user.Token,
+                            new Dictionary<string, object> {
+                                {"minValue", nowQuestion.Cost},
+                                {"maxValue", user.Money },
+                                {"canPass", false },
+                                {"canAllIn", user.Money >= nowQuestion.Cost },
+                                {"canSet", true },
+                            });
                     }
                 }
             }
@@ -2028,11 +1886,7 @@ namespace SvoyaIgra.Utils.Controllers
                         var adminText = nowTheme.Name + " " + nowQuestion.Cost;
                         if (nowQuestion.IsNoRisk)
                         {
-                            var user = GetUser(userChoiseToken);
-                            if (user != null)
-                            {
-                                adminText += "\nВопрос без риска.";
-                            }
+                            adminText += "\nВопрос без риска.";
                         }
 
                         AdminSay(adminText);
@@ -2061,12 +1915,7 @@ namespace SvoyaIgra.Utils.Controllers
                     if (!isAllready && !forse)
                         return true;
 
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                        .SetCommand(MessageTypes.MessageType.StartGame)
-                        .Add("round", nowRound.ToString());
-
-                    AddMessageForAll(message);
+                    ServerBroadcastMessage(MessageType.StartGame, new Dictionary<string, object> { { "round", nowRound } });
 
                     isGameStarted = true;
                     isGamePaused = false;
@@ -2075,47 +1924,73 @@ namespace SvoyaIgra.Utils.Controllers
                 }
                 else
                 {
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken);
-
                     if (!isGamePaused)
                     {
-                        message.SetCommand(MessageTypes.MessageType.SetPause);
                         gameForm.Pause();
                         isGamePaused = true;
+
+                        ServerBroadcastMessage(MessageType.SetPause);
                     }
                     else
                     {
-                        message.SetCommand(MessageTypes.MessageType.StartGame)
-                            .Add("round", nowRound.ToString());
                         gameForm.Start();
                         isGamePaused = false;
-                    }
 
-                    AddMessageForAll(message);
+                        ServerBroadcastMessage(MessageType.StartGame, new Dictionary<string, object> { { "round", nowRound } });
+                    }
                 }
             }
             return isGamePaused;
         }
 
-        private void AddMessageForAll(ClientServer.Message<MessageTypes.MessageType> message)
+        private void ServerSendToUser(MessageType command, string token, Dictionary<string, object> data = default)
+        {
+            var message = new Message<MessageType>(server.MyToken, token)
+                        .SetCommand(command);
+
+            if (data != default)
+            {
+                foreach (var d in data)
+                {
+                    message.Add(d.Key, d.Value);
+                }
+            }
+
+            server.SendMessage(message);
+        }
+
+        private void ServerBroadcastMessage(MessageType command, Dictionary<string, object> data = default)
         {
             lock (users)
             {
                 foreach (var user in users)
                 {
-                    user.AddDataToSend(message);
+                    ServerSendToUser(command, user.Token, data);
                 }
             }
+        }
+
+        private void ClientSendToServer(MessageType command, Dictionary<string, object> data = default)
+        {
+            var message = new Message<MessageType>(client.MyToken, client.ServerToken)
+                        .SetCommand(command);
+
+            if (data != default)
+            {
+                foreach (var d in data)
+                {
+                    message.Add(d.Key, d.Value);
+                }
+            }
+
+            client.SendMessage(message);
         }
 
         private void OnChoiseUser(string token)
         {
             lock (users)
             {
-                var user = GetUser(token);
-
-                if (user == null)
+                if (TryGetUser(token, out User user) == false)
                 {
                     return;
                 }
@@ -2126,45 +2001,29 @@ namespace SvoyaIgra.Utils.Controllers
 
                     if (state != State.Bagcat)
                     {
-                        var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.ChoiseQuestion)
-                            .Add("token", token);
-
-                        AddMessageForAll(message);
                         userChoiseToken = token;
                         AdminSay(user.Name + " выбирайте вопрос");
+                        ServerSendToUser(MessageType.ChoiseQuestion, user.Token);
                     }
                     else
                     {
                         AdminSay(user.Name + ", вопрос для вас");
-                        user.AddDataToSend(
-                            new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.StartAutoAnswer));
-
-                        AddMessageForAll(
-                            new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.ForceShowQuestion));
 
                         userChoiseToken = user.Token;
-
                         nextState = State.ShowQuestion;
+
+                        ServerSendToUser(MessageType.StartAutoAnswer, user.Token);
+                        ServerBroadcastMessage(MessageType.ForceShowQuestion);
+
                         OnEndAct();
                     }
                 }
                 else
                 {
-                    if (!token.Equals(client.Token))
+                    if (token.Equals(client.MyToken) == false)
                     {
                         gameForm.SetCanChoise(false);
-
-                        var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(client.Token)
-                            .SetCommand(MessageTypes.MessageType.UserClickUser)
-                            .Add("token", token);
-                        AddMessageForAll(message);
+                        ClientSendToServer(MessageType.UserClickUser, new Dictionary<string, object> { { "token", token } });
                     }
                 }
 
@@ -2179,13 +2038,7 @@ namespace SvoyaIgra.Utils.Controllers
                 if (isServer)
                 {
                     gameForm.SetAdminSay(data);
-
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                            .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                            .SetCommand(MessageTypes.MessageType.AdminSay)
-                            .Add("text", data);
-
-                    AddMessageForAll(message);
+                    ServerBroadcastMessage(MessageType.AdminSay, new Dictionary<string, object> { { "text", data } });
                 }
             }
         }
@@ -2194,14 +2047,7 @@ namespace SvoyaIgra.Utils.Controllers
         {
             if (!isServer)
             {
-                lock (users)
-                {
-                    var message = new ClientServer.Message<MessageTypes.MessageType>()
-                        .SetToken(client.Token)
-                        .SetCommand(MessageTypes.MessageType.TryAnswer);
-
-                    users[0].AddDataToSend(message);
-                }
+                ClientSendToServer(MessageType.TryAnswer);
             }
         }
 
@@ -2209,14 +2055,12 @@ namespace SvoyaIgra.Utils.Controllers
         {
             lock (users)
             {
-                if (userAnsToken.Equals("") || !isServer)
+                if (!isServer) { return; }
+
+                if (TryGetUser(userAnsToken, out User findUser) == false)
+                {
                     return;
-
-                var message = new ClientServer.Message<MessageTypes.MessageType>()
-                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken);
-
-                var findUser = GetUser(userAnsToken);
-
+                }
 
                 if (type != AnswerType.Fail)
                 {
@@ -2242,7 +2086,7 @@ namespace SvoyaIgra.Utils.Controllers
                 }
                 else
                 {
-                    if (!isFinal)
+                    if (isFinal == false)
                     {
                         switch (nowQuestion.questionType)
                         {
@@ -2264,13 +2108,17 @@ namespace SvoyaIgra.Utils.Controllers
 
                         gameForm.Start();
                         AdminSay("нет");
-                        message.SetCommand(MessageTypes.MessageType.StartGame)
-                            .Add("round", nowRound.ToString());
 
-                        if (!nowQuestion.IsNormal)
+                        if (nowQuestion.IsNormal == false)
                         {
                             nextState = State.ShowAnswer;
                             OnEndAct();
+                        }
+                        else
+                        {
+                            gameForm.ShowAnsMenu(false);
+                            ServerBroadcastMessage(MessageType.StartGame, new Dictionary<string, object> { { "round", nowRound } });
+                            userAnsToken = "";
                         }
                     }
                     else
@@ -2282,14 +2130,6 @@ namespace SvoyaIgra.Utils.Controllers
                         OnEndAct();
                     }
                 }
-
-                if (!isFinal)
-                {
-                    gameForm.ShowAnsMenu(false);
-                    AddMessageForAll(message);
-                    userAnsToken = "";
-                }
-
             }
         }
 
@@ -2297,15 +2137,14 @@ namespace SvoyaIgra.Utils.Controllers
         {
             lock (users)
             {
-                gameForm.UpdateMoney(user.Token, user.Money.ToString());
+                gameForm.UpdateMoney(user.Token, user.Money);
 
-                var updateMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                       .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                       .SetCommand(MessageTypes.MessageType.UpdateMoney)
-                       .Add("token", user.Token)
-                       .Add("money", user.Money.ToString());
-
-                AddMessageForAll(updateMessage);
+                ServerBroadcastMessage(
+                    MessageType.UpdateMoney,
+                    new Dictionary<string, object> {
+                        {"token", user.Token },
+                        {"money", user.Money }
+                    });
             }
         }
 
@@ -2313,15 +2152,11 @@ namespace SvoyaIgra.Utils.Controllers
         {
             lock (users)
             {
-                var user = GetUser(token);
-
-                if (user == null)
+                if (TryGetUser(token, out User user) == false)
                 {
                     return;
                 }
-
                 Kick(user);
-
             }
         }
 
@@ -2329,25 +2164,15 @@ namespace SvoyaIgra.Utils.Controllers
         {
             lock (users)
             {
-                var adminSayMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                          .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                          .SetCommand(MessageTypes.MessageType.AddToChat)
-                          .Add("data", user.Name + " leave");
-
                 gameForm.AddToChat(user.Name + " leave");
                 gameForm.AddToChat("last money: " + user.Money);
 
-                AddMessageForAll(adminSayMessage);
-
-                var message = new ClientServer.Message<MessageTypes.MessageType>()
-                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                    .SetCommand(MessageTypes.MessageType.Kick)
-                    .Add("token", user.Token);
+                ServerBroadcastMessage(MessageType.AddToChat, new Dictionary<string, object> { { "data", user.Name + " leave" } });
 
                 gameForm.Kick(user.Token);
-
                 users.Remove(user);
-                AddMessageForAll(message);
+
+                ServerBroadcastMessage(MessageType.Kick, new Dictionary<string, object> { { "token", user.Token } });
 
                 userTokenQueue.Remove(user.Token);
             }
@@ -2357,12 +2182,8 @@ namespace SvoyaIgra.Utils.Controllers
         {
             gameForm.SetCanChoise(false);
 
-            var message = new ClientServer.Message<MessageTypes.MessageType>()
-                    .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                    .SetCommand(MessageTypes.MessageType.ForseShowMain)
-                    .Add("round", nowRound.ToString());
+            ServerBroadcastMessage(MessageType.ForseShowMain, new Dictionary<string, object> { { "round", nowRound } });
 
-            AddMessageForAll(message);
             gameForm.FinishMedia(false);
 
             nowQuestion = null;
@@ -2374,12 +2195,12 @@ namespace SvoyaIgra.Utils.Controllers
             OnEndAct();
         }
 
-        private ClientServer.Message<MessageTypes.MessageType> BuildCurrentQuestionMessage()
+        private Dictionary<string, object> CurrentQuestionMessageData()
         {
-            var message = new ClientServer.Message<MessageTypes.MessageType>()
-                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                .SetCommand(MessageTypes.MessageType.SendUsedQuestion)
-                .Add("round", nowRound.ToString());
+            Dictionary<string, object> dict = new Dictionary<string, object>
+            {
+                { "round", nowRound }
+            };
 
             int count = 0;
 
@@ -2393,78 +2214,70 @@ namespace SvoyaIgra.Utils.Controllers
                     {
                         if (theme.GetQuestion(questionId).IsUsed)
                         {
-                            message.Add(count.ToString(), roundId + " " + themeId + " " + questionId);
+                            dict.Add(count.ToString(), roundId + " " + themeId + " " + questionId);
                             count++;
                         }
                     }
                 }
             }
 
-            message.Add("count", count.ToString());
-            return message;
+            dict.Add("count", count.ToString());
+            return dict;
         }
 
-        private void SendRoundData(Data.User user)
+        private bool TryGetUser(string token, out Data.User user)
         {
             lock (users)
             {
-                user.AddDataToSend(BuildCurrentQuestionMessage());
-            }
-        }
-
-        private Data.User GetUser(string token)
-        {
-            lock (users)
-            {
-                foreach (var user in users)
+                foreach (var uData in users)
                 {
-                    if (user.Token.Equals(token))
+                    if (uData.Token.Equals(token))
                     {
-                        return user;
+                        user = uData;
+                        return true;
                     }
                 }
-                return null;
             }
+
+            user = default;
+            return false;
         }
 
         private void StartConfigMoney(string token)
         {
-            Data.User user = GetUser(token);
-            if (user != null)
+            if (TryGetUser(token, out User user) == false)
             {
-                gameForm.StartConfigUser(user.Name, user.Money);
+                return;
             }
-        }
-
-        private string GetFilePath(string name)
-        {
-            return loader.GetFilePath(name);
+            gameForm.StartConfigUser(user.Name, user.Money);
         }
 
         private void AcceptConfigUser(string token, int money)
         {
-            var user = GetUser(token);
-            if (user != null)
+            if (TryGetUser(token, out User user) == false)
             {
-                lock (users)
-                {
-                    user.Money = money;
-                    UpdateUser(user);
-                }
+                return;
             }
+
+            lock (users)
+            {
+                user.Money = money;
+                UpdateUser(user);
+            }
+
         }
 
         private void SetChoiceUser(string token)
         {
-            var trueMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                .SetCommand(MessageTypes.MessageType.ChoiseQuestion)
-                .Add("token", token);
+            if (TryGetUser(token, out User user) == false)
+            {
+                return;
+            }
 
             userChoiseToken = token;
 
-            AddMessageForAll(trueMessage);
-            AdminSay(GetUser(token).Name + " выбирайте вопрос");
+            ServerSendToUser(MessageType.ChoiseQuestion, user.Token);
+            AdminSay(user.Name + " выбирайте вопрос");
             ForseShowMain();
         }
 
@@ -2481,14 +2294,11 @@ namespace SvoyaIgra.Utils.Controllers
                     rate = users[0].Money;
                 }
 
-                var message = new ClientServer.Message<MessageTypes.MessageType>()
-                     .SetToken(client.Token)
-                     .SetCommand(state == State.FinalRate ?
-                           MessageTypes.MessageType.FinalRate :
-                           MessageTypes.MessageType.AuctionChoice)
-                     .Add("rate", rate.ToString());
-
-                users[0].AddDataToSend(message);
+                ClientSendToServer(
+                    state == State.FinalRate ?
+                        MessageTypes.MessageType.FinalRate :
+                        MessageTypes.MessageType.AuctionChoice,
+                    new Dictionary<string, object> { { "rate", rate } });
             }
         }
 
@@ -2497,7 +2307,7 @@ namespace SvoyaIgra.Utils.Controllers
             lock (users)
             {
                 userTokenQueue.Enqueue(userTokenQueue.Dequeue());
-                userTokenQueue.RemoveAll((x) => GetUser(x).IsPass);
+                userTokenQueue.RemoveAll((token) => TryGetUser(token, out User user) && user.IsPass);
             }
         }
 
@@ -2538,32 +2348,21 @@ namespace SvoyaIgra.Utils.Controllers
 
         private void FinalAnswer(string data)
         {
-            lock (users)
-            {
-                var message = new ClientServer.Message<MessageTypes.MessageType>()
-                    .SetToken(client.Token)
-                    .SetCommand(MessageTypes.MessageType.FinalAnswer)
-                    .Add("data", data);
-
-                users[0].AddDataToSend(message);
-            }
+            ClientSendToServer(MessageType.FinalAnswer, new Dictionary<string, object> { { "data", data } });
         }
 
         private void EndGame(string data)
         {
             nowShowText = data;
 
-            var messageEnd = new ClientServer.Message<MessageTypes.MessageType>()
-                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                .SetCommand(MessageTypes.MessageType.AddTextToMainScreen)
-                .Add("text", data)
-                .Add("show", false.ToString()); ;
-            AddMessageForAll(messageEnd);
+            ServerBroadcastMessage(
+                MessageType.AddTextToMainScreen,
+                new Dictionary<string, object> {
+                    {"text", data },
+                    {"show", false}
+                });
 
-            var message = new ClientServer.Message<MessageTypes.MessageType>()
-                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                .SetCommand(MessageTypes.MessageType.EndGame);
-            AddMessageForAll(message);
+            ServerBroadcastMessage(MessageType.EndGame);
         }
 
         private void NextUserMove()
@@ -2574,13 +2373,12 @@ namespace SvoyaIgra.Utils.Controllers
                 {
                     NextUserQueue();
 
-                    var sendMessage = new ClientServer.Message<MessageTypes.MessageType>()
-                      .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                      .SetCommand(MessageTypes.MessageType.ChoiseTheme)
-                      .Add("token", userTokenQueue.Peek());
-                    AddMessageForAll(sendMessage);
-
-                    AdminSay(GetUser(userTokenQueue.Peek()).Name + " уберите 1 тему");
+                    if (TryGetUser(userTokenQueue.Peek(), out User user) == false)
+                    {
+                        return;
+                    }
+                    ServerSendToUser(MessageType.ChoiseTheme, user.Token);
+                    AdminSay(user.Name + " уберите 1 тему");
                 }
                 else if (state == State.FinalRate)
                 {
@@ -2602,14 +2400,13 @@ namespace SvoyaIgra.Utils.Controllers
                         {
                             nowQuestion = round.GetTheme(id).GetQuestion(0);
 
-                            var messageSend = new ClientServer.Message<MessageTypes.MessageType>()
-                                .SetToken(ClientServer.Server<MessageTypes.MessageType>.ServerToken)
-                                .SetCommand(MessageTypes.MessageType.ShowQuestion)
-                                .Add("round", nowRound.ToString())
-                                .Add("theme", id.ToString())
-                                .Add("question", "0");
-
-                            AddMessageForAll(messageSend);
+                            ServerBroadcastMessage(
+                                MessageType.ShowQuestion,
+                                new Dictionary<string, object> {
+                                    {"round", nowRound },
+                                    {"theme", id },
+                                    {"question", 0}
+                                });
 
                             ShowQuestion(nowRound, id, 0);
                             break;
@@ -2641,7 +2438,7 @@ namespace SvoyaIgra.Utils.Controllers
 
             endQCount = CalcUsedQuestion();
 
-            AddMessageForAll(BuildCurrentQuestionMessage());
+            ServerBroadcastMessage(MessageType.SendUsedQuestion, CurrentQuestionMessageData());
             ForseShowMain();
         }
     }

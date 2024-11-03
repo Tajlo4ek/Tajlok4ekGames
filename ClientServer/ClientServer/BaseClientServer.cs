@@ -1,6 +1,7 @@
 ﻿using ClientServer.FileUtils;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -23,7 +24,12 @@ namespace ClientServer
         private readonly SendRecvController sendRecvController;
 
         public Action<Message<TUserCommand>> onGetMessage;
-        public Action<ProgressFileData> OnFileLoadProgress;
+
+        public Action<ProgressFileData> OnFileLoadProgress
+        {
+            get { return sendRecvController.OnLoadCallback; }
+            set { sendRecvController.OnLoadCallback = value; }
+        }
 
         private string workPath;
 
@@ -48,7 +54,7 @@ namespace ClientServer
 
             public void UpdateCloseTime()
             {
-                this.CloseConnectionTime = DateTime.Now.AddSeconds(5);
+                this.CloseConnectionTime = DateTime.Now.AddSeconds(15);
             }
 
             public void UpdatePingTime()
@@ -70,6 +76,33 @@ namespace ClientServer
             connections = new ConcurrentDictionary<string, Connection>();
         }
 
+
+        public void SendFile(string tokenTo, string fileName)
+        {
+            var message = new Message<TUserCommand>(MyToken, tokenTo, Message<TUserCommand>.GeneralMessageType.FileProgress);
+
+            var path = workPath + @"\" + fileName;
+
+            if (File.Exists(path))
+            {
+                var length = Utils.GetFileSize(path);
+
+                var fileToken = sendRecvController.AddSendFile(tokenTo, path);
+
+                message.Add("totalSize", length.ToString())
+                       .Add("fileName", fileName)
+                       .Add("fileToken", fileToken)
+                       .Add("type", Message<TUserCommand>.FileProgressMessageType.SendFile);
+            }
+            else
+            {
+                message.Add("fileName", fileName)
+                       .Add("type", Message<TUserCommand>.FileProgressMessageType.FileNotExist);
+            }
+
+            SendMessage(message);
+        }
+
         protected void CheckFileMessage(Message<TUserCommand> message)
         {
             var type = message.GetData<Message<TUserCommand>.FileProgressMessageType>("type");
@@ -81,24 +114,7 @@ namespace ClientServer
                 case Message<TUserCommand>.FileProgressMessageType.GetFile:
                     {
                         string fileName = message.GetData<string>("fileName");
-                        var path = workPath + @"\" + fileName;
-
-                        if (File.Exists(path))
-                        {
-                            var length = Utils.GetFileSize(path);
-                            onGetMessage(message);
-
-                            var fileToken = sendRecvController.AddSendFile(message.TokenFrom, path);
-
-                            reply.Add("totalSize", length.ToString())
-                                 .Add("fileName", fileName)
-                                 .Add("fileToken", fileToken)
-                                 .Add("type", Message<TUserCommand>.FileProgressMessageType.SendFile);
-                        }
-                        else
-                        {
-                            reply.Add("type", Message<TUserCommand>.FileProgressMessageType.FileNotExists);
-                        }
+                        SendFile(message.TokenFrom, fileName);
                     }
                     break;
 
@@ -127,10 +143,15 @@ namespace ClientServer
                         else
                         {
                             reply.Add("fileToken", fileToken)
-                                 .Add("type", Message<TUserCommand>.FileProgressMessageType.FileNotExists);
+                                 .Add("type", Message<TUserCommand>.FileProgressMessageType.FileNotExist);
                         }
                     }
                     break;
+
+                case Message<TUserCommand>.FileProgressMessageType.FileNotExist:
+                    {
+                        return;
+                    }
 
                 case Message<TUserCommand>.FileProgressMessageType.FileSended:
                     {
@@ -153,7 +174,7 @@ namespace ClientServer
                         }
                         sendRecvController.RemoveSendingFile(message.TokenFrom, fileToken);
                     }
-                    break;
+                    return;
 
                 case Message<TUserCommand>.FileProgressMessageType.SendFilesProgress:
                     {
@@ -258,6 +279,12 @@ namespace ClientServer
             {
                 throw new Exception("close connection message");
             }
+
+            if (message.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
+                && message.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
+            {
+                Log("recv: " + message.OrigData);
+            }
         }
 
         public void SetWorkPath(string path)
@@ -273,6 +300,11 @@ namespace ClientServer
         public virtual void Stop()
         {
             _needStop.Value = true;
+        }
+
+        protected void Log(string text)
+        {
+            Console.WriteLine(text);
         }
     }
 }

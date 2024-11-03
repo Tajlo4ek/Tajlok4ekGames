@@ -94,9 +94,9 @@ namespace SvoyaIgra.Forms
                 nameController.SetText(name);
             }
 
-            public void SetMoney(string money)
+            public void SetMoney(int money)
             {
-                moneyController.SetText(money);
+                moneyController.SetText(money.ToString());
             }
 
             public void Dispose()
@@ -232,7 +232,7 @@ namespace SvoyaIgra.Forms
             userEditControl.Visible = false;
         }
 
-        public void SetAdminData(string name)
+        public void SetAdminName(string name)
         {
             this.BeginInvoke(new Action(() =>
             {
@@ -263,7 +263,7 @@ namespace SvoyaIgra.Forms
             }
         }
 
-        public void AddUserData(string name, string money, string token)
+        public void AddUserData(string name, int money, string token)
         {
             this.BeginInvoke(new Action(() =>
             {
@@ -798,7 +798,7 @@ namespace SvoyaIgra.Forms
             }
         }
 
-        public void UpdateMoney(string token, string money)
+        public void UpdateMoney(string token, int money)
         {
             this.BeginInvoke(new Action(() =>
             {

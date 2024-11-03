@@ -5,18 +5,17 @@ namespace ClientServer.FileUtils
 {
     internal class SendRecvController
     {
-        private readonly int partSize = 2048;
+        private readonly int partSize = 1024 * 4;
 
         private readonly object _lock = new object();
         private readonly Dictionary<string, List<SendingFile>> sendFiles;
         private readonly Dictionary<string, List<ReceivingFile>> recvFiles;
-        private readonly Action<ProgressFileData> onLoadCallback;
+        public Action<ProgressFileData> OnLoadCallback;
 
-        public SendRecvController(Action<ProgressFileData> loadCallback = null)
+        public SendRecvController()
         {
             sendFiles = new Dictionary<string, List<SendingFile>>();
             recvFiles = new Dictionary<string, List<ReceivingFile>>();
-            onLoadCallback = loadCallback;
         }
 
         public string AddSendFile(string connectionToken, string path)
@@ -43,7 +42,7 @@ namespace ClientServer.FileUtils
                     recvFiles[connectionToken] = new List<ReceivingFile>();
                 }
 
-                var newFile = new ReceivingFile(path, fileName, totalSize, onLoadCallback, fileToken);
+                var newFile = new ReceivingFile(path, fileName, totalSize, OnLoadCallback, fileToken);
                 recvFiles[connectionToken].Add(newFile);
             }
         }

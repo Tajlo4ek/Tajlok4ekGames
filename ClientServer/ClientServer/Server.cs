@@ -80,7 +80,7 @@ namespace ClientServer
                     }
                     else
                     {
-                        Thread.Sleep(5);
+                        Thread.Sleep(1);
                     }
                 }
 
@@ -103,11 +103,6 @@ namespace ClientServer
                     var data = Encoding.UTF32.GetString(bytes);
 
                     var messageFrom = Message<TUserCommand>.FromJson(data);
-                    if (messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
-                        && messageFrom.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
-                    {
-                        Log("recv: " + data);
-                    }
 
                     CheckRecvMessage(messageFrom);
 
@@ -150,11 +145,5 @@ namespace ClientServer
                 new Task(() => RecvThread(handler)).Start();
             }
         }
-
-        private void Log(string data)
-        {
-            Console.WriteLine(data);
-        }
-
     }
 }

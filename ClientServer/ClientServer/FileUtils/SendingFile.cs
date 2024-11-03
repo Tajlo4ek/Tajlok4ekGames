@@ -1,8 +1,11 @@
 ﻿using ClientServer.FileUtils;
+using System;
 using System.IO;
 
 namespace ClientServer
 {
+    //TODO: very slow send file
+
     internal class SendingFile : BaseFile
     {
         public bool Sended { get; private set; }
@@ -14,9 +17,10 @@ namespace ClientServer
             : base(path)
         {
             Sended = false;
-            stream = new FileStream(path, FileMode.Open);
+            stream = new FileStream(path, FileMode.Open, FileAccess.Read);
             filePart = new FilePart(maxSize);
         }
+
 
         public FilePart GetNextPart()
         {

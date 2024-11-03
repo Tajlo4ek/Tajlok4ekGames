@@ -4,7 +4,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Utils
+namespace Tajlo4ekUtils
 {
     public class FileUtils
     {
@@ -90,6 +90,16 @@ namespace Utils
             }
 
             return stringBuilder.ToString();
+        }
+
+        public static void MoveWithReplace(string oldPath, string newPath)
+        {
+            if (File.Exists(newPath))
+            {
+                File.Delete(newPath);
+            }
+
+            File.Move(oldPath, newPath);
         }
     }
 

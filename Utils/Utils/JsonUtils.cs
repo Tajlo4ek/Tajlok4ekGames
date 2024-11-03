@@ -1,6 +1,6 @@
 ﻿using System.Text.Json;
 
-namespace Utils
+namespace Tajlo4ekUtils
 {
     public class JsonUtils<TObj>
     {
