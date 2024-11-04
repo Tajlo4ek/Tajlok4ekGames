@@ -1,10 +1,10 @@
 ﻿using ClientServer.FileUtils;
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 
 namespace ClientServer
 {
@@ -25,6 +25,8 @@ namespace ClientServer
 
         public Action<Message<TUserCommand>> onGetMessage;
 
+        private readonly ConcurrentDictionary<string, Socket> tokenSocketBind;
+
         public Action<ProgressFileData> OnFileLoadProgress
         {
             get { return sendRecvController.OnLoadCallback; }
@@ -33,7 +35,9 @@ namespace ClientServer
 
         private string workPath;
 
-        private readonly ConcurrentDictionary<string, ConcurrentQueue<Message<TUserCommand>>> messageQueue;
+        private readonly ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>> messageQueue;
+
+        ConcurrentQueueWithSignal<Message<TUserCommand>> recvMessageQueue;
 
         private class Connection
         {
@@ -70,12 +74,13 @@ namespace ClientServer
             ipEndPoint = new IPEndPoint(ipAddr, port);
             mainSocket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-            messageQueue = new ConcurrentDictionary<string, ConcurrentQueue<Message<TUserCommand>>>();
+            messageQueue = new ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>>();
             sendRecvController = new SendRecvController();
 
             connections = new ConcurrentDictionary<string, Connection>();
+            tokenSocketBind = new ConcurrentDictionary<string, Socket>();
+            recvMessageQueue = new ConcurrentQueueWithSignal<Message<TUserCommand>>();
         }
-
 
         public void SendFile(string tokenTo, string fileName)
         {
@@ -93,14 +98,11 @@ namespace ClientServer
                        .Add("fileName", fileName)
                        .Add("fileToken", fileToken)
                        .Add("type", Message<TUserCommand>.FileProgressMessageType.SendFile);
-            }
-            else
-            {
-                message.Add("fileName", fileName)
-                       .Add("type", Message<TUserCommand>.FileProgressMessageType.FileNotExist);
+
+
+                SendMessage(message);
             }
 
-            SendMessage(message);
         }
 
         protected void CheckFileMessage(Message<TUserCommand> message)
@@ -217,18 +219,22 @@ namespace ClientServer
             }
         }
 
-        public void SendMessage(Message<TUserCommand> message)
+        protected AutoResetEvent RegNewToken(string token, Socket socket)
         {
-            var token = message.TokenTo;
-
             if (messageQueue.ContainsKey(token) == false)
             {
-                messageQueue.TryAdd(token, new ConcurrentQueue<Message<TUserCommand>>());
+                messageQueue.TryAdd(token, new ConcurrentQueueWithSignal<Message<TUserCommand>>());
+                tokenSocketBind[token] = socket;
             }
 
-            if (messageQueue.TryGetValue(token, out ConcurrentQueue<Message<TUserCommand>> queue))
+            return messageQueue[token].SignalEvent;
+        }
+
+        public void SendMessage(Message<TUserCommand> message)
+        {
+            if (messageQueue.TryGetValue(message.TokenTo, out ConcurrentQueueWithSignal<Message<TUserCommand>> item))
             {
-                queue.Enqueue(message);
+                item.Enqueue(message);
             }
         }
 
@@ -236,14 +242,14 @@ namespace ClientServer
         {
             message = default;
 
-            if (messageQueue.TryGetValue(token, out ConcurrentQueue<Message<TUserCommand>> queue) == false)
+            if (messageQueue.TryGetValue(token, out ConcurrentQueueWithSignal<Message<TUserCommand>> item) == false)
             {
                 return false;
             }
 
-            if (queue.IsEmpty == false)
+            if (item.IsEmpty == false)
             {
-                return queue.TryDequeue(out message);
+                return item.TryDequeue(out message);
             }
             else
             {
@@ -304,7 +310,8 @@ namespace ClientServer
 
         protected void Log(string text)
         {
-            Console.WriteLine(text);
+            Console.WriteLine((this is Client<TUserCommand> ? "[client] " : "[server] ") + text);
         }
+
     }
 }

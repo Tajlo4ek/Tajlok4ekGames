@@ -4,8 +4,6 @@ using System.IO;
 
 namespace ClientServer
 {
-    //TODO: very slow send file
-
     internal class SendingFile : BaseFile
     {
         public bool Sended { get; private set; }
@@ -13,12 +11,12 @@ namespace ClientServer
         private readonly FileStream stream;
         private readonly FilePart filePart;
 
-        public SendingFile(string path, int maxSize)
+        public SendingFile(string path, int readPerOneCall)
             : base(path)
         {
             Sended = false;
             stream = new FileStream(path, FileMode.Open, FileAccess.Read);
-            filePart = new FilePart(maxSize);
+            filePart = new FilePart(readPerOneCall);
         }
 
 
@@ -36,6 +34,7 @@ namespace ClientServer
                 Sended = true;
                 stream.Close();
             }
+
             return filePart;
         }
     }

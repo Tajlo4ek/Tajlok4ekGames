@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -6,6 +7,25 @@ using System.Threading;
 
 namespace ClientServer
 {
+    public class ConcurrentQueueWithSignal<T>
+    {
+        public AutoResetEvent SignalEvent { get; private set; } = new AutoResetEvent(false);
+
+        private readonly ConcurrentQueue<T> queue = new ConcurrentQueue<T>();
+
+        public void Enqueue(T message)
+        {
+            queue.Enqueue(message);
+            SignalEvent.Set();
+        }
+
+        public bool IsEmpty { get { return queue.IsEmpty; } }
+
+        public bool TryDequeue(out T data)
+        {
+            return queue.TryDequeue(out data);
+        }
+    }
 
     public static class Utils
     {
@@ -13,33 +33,28 @@ namespace ClientServer
 
         public const int defaultPort = 35124;
 
-
-        private static void WaitCount(Socket socket, int count, int timeout)
+        private static byte[] RecvCount(Socket socket, int count, int timeout)
         {
-            int time = 0;
+            socket.ReceiveTimeout = timeout;
 
-            while (socket.Available < count)
+            var buffer = new byte[count];
+            int totalRecv = 0;
+
+            while (totalRecv != count)
             {
-                Thread.Sleep(10);
-
-                time += 10;
-                if (time >= timeout)
-                    throw new Exception("timeout wait");
+                var recvCount = socket.Receive(buffer, totalRecv, count - totalRecv, SocketFlags.None);
+                totalRecv += recvCount;
             }
+
+            return buffer;
         }
 
         internal static byte[] GetPackage(Socket socket, int timeout = 5000)
         {
-            WaitCount(socket, Utils.numCount, timeout);
-            byte[] bytes = new byte[Utils.numCount];
-            socket.Receive(bytes);
-            int needCount = int.Parse(Encoding.UTF8.GetString(bytes));
+            var recvBytes = RecvCount(socket, Utils.numCount, timeout);
+            int needCount = int.Parse(Encoding.UTF8.GetString(recvBytes));
 
-            WaitCount(socket, needCount, timeout);
-            bytes = new byte[needCount];
-            socket.Receive(bytes);
-
-            return bytes;
+            return RecvCount(socket, needCount, timeout);
         }
 
         internal static void SendPackage(Socket socket, string data)

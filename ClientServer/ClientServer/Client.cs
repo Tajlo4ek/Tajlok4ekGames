@@ -19,6 +19,8 @@ namespace ClientServer
         Thread workSendThread;
         Thread workRecvThread;
 
+        private AutoResetEvent workSendEvent;
+
         public Client(IPAddress ip, int port = Utils.defaultPort)
             : base(ip, port)
         {
@@ -79,7 +81,9 @@ namespace ClientServer
                     }
                     else
                     {
-                        if (TryGetMessageForToken(serverToken.Value, out Message<TUserCommand> message))
+                        workSendEvent.WaitOne(1000);
+
+                        while (TryGetMessageForToken(serverToken.Value, out Message<TUserCommand> message))
                         {
                             Utils.SendPackage(mainSocket, message.GetJson());
 
@@ -88,11 +92,6 @@ namespace ClientServer
                             {
                                 Log("send: " + message.GetJson());
                             }
-
-                        }
-                        else
-                        {
-                            Thread.Sleep(5);
                         }
                     }
                 }
@@ -151,6 +150,7 @@ namespace ClientServer
             switch (message.MessageType)
             {
                 case Message<TUserCommand>.GeneralMessageType.SendReg:
+                    workSendEvent = RegNewToken(message.TokenFrom, mainSocket);
                     serverToken.Value = message.TokenFrom;
                     Token.Value = message.GetData<string>("token");
                     OnServerConnected?.Invoke();

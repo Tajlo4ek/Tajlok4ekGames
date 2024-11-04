@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -10,14 +11,15 @@ namespace ClientServer
 
     public class Server<TUserCommand> : BaseClientServer<TUserCommand>
     {
-        Thread workThread;
-
         public Action<string> NewUserConnect;
+
+        private readonly ConcurrentDictionary<string, AutoResetEvent> sendEvents;
 
         public Server(IPAddress ip, int port = Utils.defaultPort)
             : base(ip, port)
         {
             Token.Value = TokenGenerator.Generate();
+            sendEvents = new ConcurrentDictionary<string, AutoResetEvent>();
         }
 
         public override bool Start()
@@ -25,8 +27,10 @@ namespace ClientServer
             try
             {
                 base.Start();
-                workThread = new Thread(Work);
-                workThread.Start();
+
+                mainSocket.Bind(ipEndPoint);
+                mainSocket.Listen(100);
+                AcceptCallback(null);
             }
             catch (Exception ex)
             {
@@ -40,7 +44,6 @@ namespace ClientServer
         {
             base.Stop();
             mainSocket?.Close();
-            workThread?.Abort();
         }
 
         protected override void CheckRecvMessage(Message<TUserCommand> message)
@@ -68,6 +71,8 @@ namespace ClientServer
             {
                 while (NeedStop == false)
                 {
+                    sendEvents[token].WaitOne(1000);
+
                     if (TryGetMessageForToken(token, out Message<TUserCommand> message))
                     {
                         Utils.SendPackage(handler, message.GetJson());
@@ -77,10 +82,6 @@ namespace ClientServer
                         {
                             Log("send: " + message.GetJson());
                         }
-                    }
-                    else
-                    {
-                        Thread.Sleep(1);
                     }
                 }
 
@@ -104,8 +105,6 @@ namespace ClientServer
 
                     var messageFrom = Message<TUserCommand>.FromJson(data);
 
-                    CheckRecvMessage(messageFrom);
-
                     if (messageFrom.MessageType == Message<TUserCommand>.GeneralMessageType.GetReg)
                     {
                         token = TokenGenerator.Generate();
@@ -113,12 +112,15 @@ namespace ClientServer
                         var ans = new Message<TUserCommand>(Token.Value, token, Message<TUserCommand>.GeneralMessageType.SendReg)
                             .Add("token", token);
 
+                        sendEvents[token] = RegNewToken(token, handler);
 
-                        NewUserConnect?.Invoke(token);
                         SendMessage(ans);
+                        NewUserConnect?.Invoke(token);
 
                         new Task(() => SendThread(handler, token)).Start();
                     }
+
+                    CheckRecvMessage(messageFrom);
                 }
             }
             catch (Exception ex)
@@ -134,16 +136,15 @@ namespace ClientServer
             onErrorAction?.Invoke(ex, token);
         }
 
-        private void Work()
+        private void AcceptCallback(IAsyncResult result)
         {
-            mainSocket.Bind(ipEndPoint);
-            mainSocket.Listen(100);
-
-            while (true)
+            if (result != null)
             {
-                Socket handler = mainSocket.Accept();
+                Socket handler = mainSocket.EndAccept(result);
                 new Task(() => RecvThread(handler)).Start();
             }
+
+            mainSocket.BeginAccept(AcceptCallback, null);
         }
     }
 }
