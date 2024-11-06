@@ -11,15 +11,15 @@ namespace ClientServer
 
     public class Server<TUserCommand> : BaseClientServer<TUserCommand>
     {
-        public Action<string> NewUserConnect;
-
-        private readonly ConcurrentDictionary<string, AutoResetEvent> sendEvents;
-
         public Server(IPAddress ip, int port = Utils.defaultPort)
-            : base(ip, port)
+            : base(ip, port, true)
         {
             Token.Value = TokenGenerator.Generate();
-            sendEvents = new ConcurrentDictionary<string, AutoResetEvent>();
+
+            InternalNewConnectAction = (token, socket, sendEvent) =>
+            {
+                new Task(() => SendThread(socket, token, sendEvent)).Start();
+            };
         }
 
         public override bool Start()
@@ -43,97 +43,8 @@ namespace ClientServer
         public override void Stop()
         {
             base.Stop();
+            mainSocket?.Shutdown(SocketShutdown.Both);
             mainSocket?.Close();
-        }
-
-        protected override void CheckRecvMessage(Message<TUserCommand> message)
-        {
-            base.CheckRecvMessage(message);
-
-            switch (message.MessageType)
-            {
-                case Message<TUserCommand>.GeneralMessageType.FileProgress:
-                    CheckFileMessage(message);
-                    break;
-
-                case Message<TUserCommand>.GeneralMessageType.User:
-                    onGetMessage(message);
-                    break;
-
-                default:
-                    break;
-            }
-        }
-
-        private void SendThread(Socket handler, string token)
-        {
-            try
-            {
-                while (NeedStop == false)
-                {
-                    sendEvents[token].WaitOne(1000);
-
-                    if (TryGetMessageForToken(token, out Message<TUserCommand> message))
-                    {
-                        Utils.SendPackage(handler, message.GetJson());
-
-                        if (message.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
-                            && message.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
-                        {
-                            Log("send: " + message.GetJson());
-                        }
-                    }
-                }
-
-            }
-            catch (Exception ex)
-            {
-                OnError(token, handler, ex);
-            }
-        }
-
-        private void RecvThread(Socket handler)
-        {
-            string token = "";
-
-            try
-            {
-                while (NeedStop == false)
-                {
-                    var bytes = Utils.GetPackage(handler);
-                    var data = Encoding.UTF32.GetString(bytes);
-
-                    var messageFrom = Message<TUserCommand>.FromJson(data);
-
-                    if (messageFrom.MessageType == Message<TUserCommand>.GeneralMessageType.GetReg)
-                    {
-                        token = TokenGenerator.Generate();
-
-                        var ans = new Message<TUserCommand>(Token.Value, token, Message<TUserCommand>.GeneralMessageType.SendReg)
-                            .Add("token", token);
-
-                        sendEvents[token] = RegNewToken(token, handler);
-
-                        SendMessage(ans);
-                        NewUserConnect?.Invoke(token);
-
-                        new Task(() => SendThread(handler, token)).Start();
-                    }
-
-                    CheckRecvMessage(messageFrom);
-                }
-            }
-            catch (Exception ex)
-            {
-                OnError(token, handler, ex);
-            }
-        }
-
-        private void OnError(string token, Socket socket, Exception ex)
-        {
-            socket?.Shutdown(SocketShutdown.Both);
-            Log("error " + ex.ToString() + " \n" + ex.StackTrace);
-            onErrorAction?.Invoke(ex, token);
         }
 
         private void AcceptCallback(IAsyncResult result)

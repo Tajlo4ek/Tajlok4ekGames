@@ -25,6 +25,11 @@ namespace ClientServer
         {
             return queue.TryDequeue(out data);
         }
+
+        public void Wait()
+        {
+            SignalEvent.WaitOne(100);
+        }
     }
 
     public static class Utils

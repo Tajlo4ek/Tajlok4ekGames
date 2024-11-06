@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ClientServer
 {
@@ -12,18 +13,14 @@ namespace ClientServer
 
         public string ServerToken { get { return serverToken.Value; } }
 
-
-        public Action<Message<TUserCommand>> OnGetMessage;
-        public Action OnServerConnected;
-
-        Thread workSendThread;
-        Thread workRecvThread;
-
-        private AutoResetEvent workSendEvent;
-
         public Client(IPAddress ip, int port = Utils.defaultPort)
-            : base(ip, port)
+            : base(ip, port, false)
         {
+            InternalNewConnectAction += (token, socket, sendEvent) =>
+            {
+                serverToken.Value = token;
+                new Task(() => SendThread(socket, token, sendEvent)).Start();
+            };
         }
 
         public override bool Start()
@@ -31,142 +28,20 @@ namespace ClientServer
             try
             {
                 base.Start();
-
                 mainSocket.Connect(ipEndPoint);
 
-                workSendThread = new Thread(SendThread);
-                workRecvThread = new Thread(RecvThread);
+                new Task(() => RecvThread(mainSocket)).Start();
 
-                workSendThread.Start();
-                workRecvThread.Start();
+
+                var startMessage = new Message<TUserCommand>("", "", Message<TUserCommand>.GeneralMessageType.GetReg);
+                Utils.SendPackage(mainSocket, startMessage.GetJson());
             }
             catch (Exception ex)
             {
-                OnError(ex);
+                OnError("", null, ex);
                 return false;
             }
             return true;
-        }
-
-
-        private void SendThread()
-        {
-            var getRegTimeout = DateTime.Now.AddSeconds(30);
-
-            bool isSendStart = false;
-
-            try
-            {
-                while (NeedStop == false)
-                {
-                    if (Token.Value.Length == 0)
-                    {
-                        if (isSendStart == false)
-                        {
-                            isSendStart = true;
-
-                            var startMessage = new Message<TUserCommand>("", "", Message<TUserCommand>.GeneralMessageType.GetReg);
-
-                            Utils.SendPackage(mainSocket, startMessage.GetJson());
-                        }
-
-                        if (getRegTimeout < DateTime.Now)
-                        {
-                            throw new Exception("timeout reg token");
-                        }
-                        else
-                        {
-                            Thread.Sleep(50);
-                        }
-                    }
-                    else
-                    {
-                        workSendEvent.WaitOne(1000);
-
-                        while (TryGetMessageForToken(serverToken.Value, out Message<TUserCommand> message))
-                        {
-                            Utils.SendPackage(mainSocket, message.GetJson());
-
-                            if (message.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
-                                && message.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
-                            {
-                                Log("send: " + message.GetJson());
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                OnError(ex);
-            }
-        }
-
-        private void RecvThread()
-        {
-            try
-            {
-                while (NeedStop == false)
-                {
-                    var bytes = Utils.GetPackage(mainSocket);
-                    var data = Encoding.UTF32.GetString(bytes);
-
-                    var messageFrom = Message<TUserCommand>.FromJson(data);
-
-                    CheckRecvMessage(messageFrom);
-                }
-            }
-            catch (Exception ex)
-            {
-                OnError(ex);
-            }
-        }
-
-        private void OnError(Exception ex)
-        {
-            Log("error: " + ex.ToString() + "\n" + ex.StackTrace);
-
-            Stop();
-
-            onErrorAction?.Invoke(ex, Token.Value);
-
-            workRecvThread?.Abort();
-            workSendThread?.Abort();
-
-            try
-            {
-                mainSocket?.Shutdown(SocketShutdown.Both);
-                mainSocket?.Close();
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        protected override void CheckRecvMessage(Message<TUserCommand> message)
-        {
-            base.CheckRecvMessage(message);
-
-            switch (message.MessageType)
-            {
-                case Message<TUserCommand>.GeneralMessageType.SendReg:
-                    workSendEvent = RegNewToken(message.TokenFrom, mainSocket);
-                    serverToken.Value = message.TokenFrom;
-                    Token.Value = message.GetData<string>("token");
-                    OnServerConnected?.Invoke();
-                    break;
-
-                case Message<TUserCommand>.GeneralMessageType.FileProgress:
-                    CheckFileMessage(message);
-                    break;
-
-                case Message<TUserCommand>.GeneralMessageType.User:
-                    OnGetMessage(message);
-                    break;
-
-                default:
-                    break;
-            }
         }
     }
 }

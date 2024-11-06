@@ -4,7 +4,10 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ClientServer
 {
@@ -20,12 +23,13 @@ namespace ClientServer
         protected readonly IPEndPoint ipEndPoint;
         protected readonly Socket mainSocket;
 
-        public Action<Exception, string> onErrorAction;
+        public Action<Exception, string> OnErrorAction;
         private readonly SendRecvController sendRecvController;
 
-        public Action<Message<TUserCommand>> onGetMessage;
+        public Action<Message<TUserCommand>> OnGetMessage;
 
-        private readonly ConcurrentDictionary<string, Socket> tokenSocketBind;
+        protected Action<string, Socket, AutoResetEvent> InternalNewConnectAction;
+        public Action<string> NewConnectAction;
 
         public Action<ProgressFileData> OnFileLoadProgress
         {
@@ -34,10 +38,10 @@ namespace ClientServer
         }
 
         private string workPath;
+        private readonly bool isServer;
 
-        private readonly ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>> messageQueue;
-
-        ConcurrentQueueWithSignal<Message<TUserCommand>> recvMessageQueue;
+        private readonly ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>> sendMessageQueue;
+        private readonly ConcurrentQueueWithSignal<Message<TUserCommand>> recvMessageQueue;
 
         private class Connection
         {
@@ -69,17 +73,19 @@ namespace ClientServer
 
         private readonly ConcurrentDictionary<string, Connection> connections;
 
-        public BaseClientServer(IPAddress ipAddr, int port)
+        public BaseClientServer(IPAddress ipAddr, int port, bool isServer)
         {
             ipEndPoint = new IPEndPoint(ipAddr, port);
             mainSocket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-            messageQueue = new ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>>();
+            sendMessageQueue = new ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>>();
             sendRecvController = new SendRecvController();
 
             connections = new ConcurrentDictionary<string, Connection>();
-            tokenSocketBind = new ConcurrentDictionary<string, Socket>();
             recvMessageQueue = new ConcurrentQueueWithSignal<Message<TUserCommand>>();
+            this.isServer = isServer;
+
+            new Task(CheckRecvMessageThread).Start();
         }
 
         public void SendFile(string tokenTo, string fileName)
@@ -105,7 +111,7 @@ namespace ClientServer
 
         }
 
-        protected void CheckFileMessage(Message<TUserCommand> message)
+        private void CheckFileMessage(Message<TUserCommand> message)
         {
             var type = message.GetData<Message<TUserCommand>.FileProgressMessageType>("type");
 
@@ -187,6 +193,11 @@ namespace ClientServer
                         {
                             file.AddBytes(filePart.Data, filePart.Available);
 
+                            if (file.IsWrited)
+                            {
+                                sendRecvController.RemoveRecvingFile(message.TokenFrom, fileToken);
+                            }
+
                             reply.Add("fileToken", fileToken)
                                  .Add("type", Message<TUserCommand>.FileProgressMessageType.RecvFilesProgress);
                         }
@@ -211,7 +222,7 @@ namespace ClientServer
             SendMessage(reply);
         }
 
-        protected void UpdateAlive(string token)
+        private void UpdateAlive(string token)
         {
             if (connections.TryGetValue(token, out Connection connection))
             {
@@ -219,30 +230,29 @@ namespace ClientServer
             }
         }
 
-        protected AutoResetEvent RegNewToken(string token, Socket socket)
+        private AutoResetEvent RegNewToken(string token)
         {
-            if (messageQueue.ContainsKey(token) == false)
+            if (sendMessageQueue.ContainsKey(token) == false)
             {
-                messageQueue.TryAdd(token, new ConcurrentQueueWithSignal<Message<TUserCommand>>());
-                tokenSocketBind[token] = socket;
+                sendMessageQueue.TryAdd(token, new ConcurrentQueueWithSignal<Message<TUserCommand>>());
             }
 
-            return messageQueue[token].SignalEvent;
+            return sendMessageQueue[token].SignalEvent;
         }
 
         public void SendMessage(Message<TUserCommand> message)
         {
-            if (messageQueue.TryGetValue(message.TokenTo, out ConcurrentQueueWithSignal<Message<TUserCommand>> item))
+            if (sendMessageQueue.TryGetValue(message.TokenTo, out ConcurrentQueueWithSignal<Message<TUserCommand>> item))
             {
                 item.Enqueue(message);
             }
         }
 
-        protected bool TryGetMessageForToken(string token, out Message<TUserCommand> message)
+        private bool TryGetMessageForToken(string token, out Message<TUserCommand> message)
         {
             message = default;
 
-            if (messageQueue.TryGetValue(token, out ConcurrentQueueWithSignal<Message<TUserCommand>> item) == false)
+            if (sendMessageQueue.TryGetValue(token, out ConcurrentQueueWithSignal<Message<TUserCommand>> item) == false)
             {
                 return false;
             }
@@ -277,7 +287,19 @@ namespace ClientServer
             return false;
         }
 
-        protected virtual void CheckRecvMessage(Message<TUserCommand> message)
+        private void CheckRecvMessageThread()
+        {
+            while (true)
+            {
+                recvMessageQueue.Wait();
+                while (recvMessageQueue.TryDequeue(out Message<TUserCommand> message))
+                {
+                    CheckRecvMessage(message);
+                }
+            }
+        }
+
+        private void CheckRecvMessage(Message<TUserCommand> message)
         {
             UpdateAlive(message.TokenFrom);
 
@@ -291,6 +313,101 @@ namespace ClientServer
             {
                 Log("recv: " + message.OrigData);
             }
+
+            switch (message.MessageType)
+            {
+                case Message<TUserCommand>.GeneralMessageType.FileProgress:
+                    CheckFileMessage(message);
+                    break;
+
+                case Message<TUserCommand>.GeneralMessageType.User:
+                    OnGetMessage(message);
+                    break;
+
+                case Message<TUserCommand>.GeneralMessageType.SendReg:
+                    if (isServer == true)
+                    {
+                        break;
+                    }
+
+                    var sendEvent = RegNewToken(message.TokenFrom);
+                    Token.Value = message.GetData<string>("token");
+                    InternalNewConnectAction?.Invoke(message.TokenFrom, mainSocket, sendEvent);
+                    NewConnectAction?.Invoke(message.TokenFrom);
+                    break;
+            }
+        }
+
+        protected void SendThread(Socket socket, string token, AutoResetEvent sendEvent)
+        {
+            try
+            {
+                while (NeedStop == false)
+                {
+                    sendEvent.WaitOne(100);
+
+                    if (TryGetMessageForToken(token, out Message<TUserCommand> message))
+                    {
+                        Utils.SendPackage(socket, message.GetJson());
+
+                        if (message.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
+                            && message.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
+                        {
+                            Log("send: " + message.GetJson());
+                        }
+                    }
+                }
+
+            }
+            catch (Exception ex)
+            {
+                OnError(token, socket, ex);
+            }
+        }
+
+        protected void RecvThread(Socket socket)
+        {
+            bool hasToken = false;
+
+            try
+            {
+                while (NeedStop == false)
+                {
+                    var bytes = Utils.GetPackage(socket);
+                    var data = Encoding.UTF32.GetString(bytes);
+                    var messageFrom = Message<TUserCommand>.FromJson(data);
+
+                    if (isServer
+                        && hasToken == false
+                        && messageFrom.MessageType == Message<TUserCommand>.GeneralMessageType.GetReg)
+                    {
+                        hasToken = true;
+                        var token = TokenGenerator.Generate();
+
+                        var ans = new Message<TUserCommand>(Token.Value, token, Message<TUserCommand>.GeneralMessageType.SendReg)
+                            .Add("token", token);
+
+                        var sendEvent = RegNewToken(token);
+
+                        SendMessage(ans);
+                        InternalNewConnectAction?.Invoke(token, socket, sendEvent);
+                        NewConnectAction?.Invoke(token);
+                    }
+
+                    recvMessageQueue.Enqueue(messageFrom);
+                }
+            }
+            catch (Exception ex)
+            {
+                OnError("", socket, ex);
+            }
+        }
+
+        protected void OnError(string token, Socket socket, Exception ex)
+        {
+            socket?.Shutdown(SocketShutdown.Both);
+            Log("error " + ex.ToString() + " \n" + ex.StackTrace);
+            OnErrorAction?.Invoke(ex, token);
         }
 
         public void SetWorkPath(string path)
@@ -305,10 +422,11 @@ namespace ClientServer
 
         public virtual void Stop()
         {
+            sendRecvController.Dispose();
             _needStop.Value = true;
         }
 
-        protected void Log(string text)
+        private void Log(string text)
         {
             Console.WriteLine((this is Client<TUserCommand> ? "[client] " : "[server] ") + text);
         }
