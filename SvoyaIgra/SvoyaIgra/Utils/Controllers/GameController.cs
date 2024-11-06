@@ -18,6 +18,7 @@ namespace SvoyaIgra.Utils.Controllers
         public static readonly string MyImgName = "myImg";
         public static readonly string AdminImgName = "adminImg";
 
+
         public enum SkipType
         {
             Theme,
@@ -179,9 +180,9 @@ namespace SvoyaIgra.Utils.Controllers
 
 
                 server = new ClientServer.Server<MessageTypes.MessageType>(ip, connectionPort);
-                server.onGetMessage += OnGetUserMassage;
-                server.onErrorAction += OnServerError;
-                server.NewUserConnect += ServerNewUserConnected;
+                server.OnGetMessage += OnGetUserMassage;
+                server.OnErrorAction += OnServerError;
+                server.NewConnectAction += ServerNewUserConnected;
                 server.OnFileLoadProgress += FileLoadProgress;
                 server.SetWorkPath(loader.WorkDirectory);
 
@@ -195,11 +196,11 @@ namespace SvoyaIgra.Utils.Controllers
                 loader.LoadImg(imgUrl, MyImgName);
 
                 client = new ClientServer.Client<MessageTypes.MessageType>(ip, connectionPort);
-                client.onErrorAction += OnClientError;
+                client.OnErrorAction += OnClientError;
                 client.SetWorkPath(loader.WorkDirectory);
                 client.OnGetMessage += OnGetUserMassage;
                 client.OnFileLoadProgress += FileLoadProgress;
-                client.OnServerConnected += ClientToServerConnected;
+                client.NewConnectAction += ClientToServerConnected;
 
                 client.Start();
             }
@@ -213,19 +214,18 @@ namespace SvoyaIgra.Utils.Controllers
 
         private void ServerNewUserConnected(string token)
         {
-            if (isServer)
-            {
-                var connectedUser = new Data.User(token);
 
-                users.Add(connectedUser);
-                ServerSendToUser(MessageType.SendAdminData, connectedUser.Token, new Dictionary<string, object> { { "name", myName } });
-            }
+            var connectedUser = new Data.User(token);
+
+            users.Add(connectedUser);
+            ServerSendToUser(MessageType.SendAdminData, connectedUser.Token, new Dictionary<string, object> { { "name", myName } });
+
 
             server.SendFile(token, DataStore.Utils.PackUtils.PackManager.BasePackName);
             server.SendFile(token, AdminImgName);
         }
 
-        private void ClientToServerConnected()
+        private void ClientToServerConnected(string token)
         {
             loader.RenameFile(MyImgName, client.MyToken);
 
@@ -420,7 +420,7 @@ namespace SvoyaIgra.Utils.Controllers
                         {
                             var userToken = message.GetData<string>("token");
 
-                            if (TryGetUser(message.TokenFrom, out User user) != false)
+                            if (TryGetUser(userToken, out User user) != false)
                             {
                                 return;
                             }
@@ -428,7 +428,10 @@ namespace SvoyaIgra.Utils.Controllers
                             var userName = message.GetData<string>("name");
                             var userMoney = message.GetData<int>("money");
 
-                            users.Add(new Data.User(userToken, userName));
+                            lock (users)
+                            {
+                                users.Add(new Data.User(userToken, userName));
+                            }
                             gameForm.AddUserData(userName, userMoney, userToken);
                         }
                     }

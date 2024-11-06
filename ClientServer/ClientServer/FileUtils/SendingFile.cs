@@ -8,7 +8,6 @@ namespace ClientServer
     {
         public bool Sended { get; private set; }
 
-        private readonly FileStream stream;
         private readonly FilePart filePart;
 
         public SendingFile(string path, int readPerOneCall)

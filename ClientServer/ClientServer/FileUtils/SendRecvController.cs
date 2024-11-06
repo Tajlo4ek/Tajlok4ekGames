@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace ClientServer.FileUtils
 {
-    internal class SendRecvController
+    internal class SendRecvController : IDisposable
     {
         private readonly int partSize = 1024 * 4;
 
@@ -102,5 +102,12 @@ namespace ClientServer.FileUtils
                 }
             }
         }
+
+        public void Dispose()
+        {
+            sendFiles.Clear();
+            recvFiles.Clear();
+        }
+
     }
 }
