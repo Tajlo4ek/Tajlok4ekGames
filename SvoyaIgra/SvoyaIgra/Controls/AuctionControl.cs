@@ -48,7 +48,7 @@ namespace SvoyaIgra.Controls
 
         public void ShowAuction(int minValue, int maxValue, bool canPass, bool canAllIn, bool canSet)
         {
-            trBarAuctionRate.Minimum = (int)Math.Round((float)minValue / step);
+            trBarAuctionRate.Minimum = Math.Max((int)Math.Round((float)minValue / step), 1);
             tbAuctionRate.Text = (trBarAuctionRate.Minimum * step).ToString();
 
             if (canAllIn && !canSet)

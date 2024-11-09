@@ -299,6 +299,8 @@ namespace SvoyaIgra.Utils.Controllers
                 if (user == null || token == "")
                     return;
 
+                RemoveUser(token);
+
                 ServerBroadcastMessage(MessageType.Kick, new Dictionary<string, object> { { "token", token } });
             }
         }
@@ -663,15 +665,7 @@ namespace SvoyaIgra.Utils.Controllers
                             }
                             else
                             {
-                                for (int userId = 0; userId < users.Count; userId++)
-                                {
-                                    if (users[userId].Token.Equals(token))
-                                    {
-                                        users.RemoveAt(userId);
-                                        gameForm.Kick(token);
-                                        break;
-                                    }
-                                }
+                                RemoveUser(token);
                             }
                         }
                     }
@@ -1676,7 +1670,7 @@ namespace SvoyaIgra.Utils.Controllers
                     var text = "Кот в мешке!\nВопрос нужно отдать\n\nТема: " + nowQuestion.ThemeName + "\nСтоимость: " + nowQuestion.SpecialCost;
                     return Utils.DrawUtils.GenerateShowText(text, true, size, mainFont, MainColor);
                 case State.Auction:
-                    return Utils.DrawUtils.GenerateShowText("Вопрос-аукцион", true, size, mainFont, MainColor);
+                    return Utils.DrawUtils.GenerateShowText("Вопрос-аукцион\n" + nowQuestion.ThemeName + "\n\n\n", true, size, mainFont, MainColor);
                 case State.End:
                 case State.ShowText:
                 case State.FinalRate:
@@ -2062,6 +2056,7 @@ namespace SvoyaIgra.Utils.Controllers
 
                 if (TryGetUser(userAnsToken, out User findUser) == false)
                 {
+                    userAnsToken = "";
                     return;
                 }
 
@@ -2085,6 +2080,7 @@ namespace SvoyaIgra.Utils.Controllers
                         userTokenQueue.Remove(findUser.Token);
                     }
                     userChoiseToken = userAnsToken;
+                    userAnsToken = "";
                     OnEndAct();
                 }
                 else
@@ -2121,8 +2117,8 @@ namespace SvoyaIgra.Utils.Controllers
                         {
                             gameForm.ShowAnsMenu(false);
                             ServerBroadcastMessage(MessageType.StartGame, new Dictionary<string, object> { { "round", nowRound } });
-                            userAnsToken = "";
                         }
+                        userAnsToken = "";
                     }
                     else
                     {
@@ -2422,6 +2418,22 @@ namespace SvoyaIgra.Utils.Controllers
                 }
             }
 
+        }
+
+        private void RemoveUser(string token)
+        {
+            lock (users)
+            {
+                for (int userId = 0; userId < users.Count; userId++)
+                {
+                    if (users[userId].Token.Equals(token))
+                    {
+                        users.RemoveAt(userId);
+                        gameForm.Kick(token);
+                        break;
+                    }
+                }
+            }
         }
 
         private void SkipQuestion(ChoiceRect questrion, SkipType type)

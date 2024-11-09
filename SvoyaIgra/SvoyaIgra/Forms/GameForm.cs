@@ -512,6 +512,7 @@ namespace SvoyaIgra.Forms
             {
                 lock (locker)
                 {
+                    timeMs = 0;
                     toEnd = false;
                     videoPlayer.Ctlcontrols.stop();
                     videoPlayer.URL = "";
