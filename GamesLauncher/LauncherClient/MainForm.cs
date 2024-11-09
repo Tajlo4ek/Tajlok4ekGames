@@ -52,9 +52,11 @@ namespace LauncherClient
 
         private void FileLoadProgress(ProgressFileData data)
         {
+            var state = data.State;
+
             this.BeginInvoke(new Action(() =>
             {
-                if (data.State == ProgressFileData.States.End || data.State == ProgressFileData.States.Error)
+                if (state == ProgressFileData.States.End || state == ProgressFileData.States.Error)
                 {
                     coutReady++;
                 }

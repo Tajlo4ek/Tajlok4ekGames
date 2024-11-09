@@ -1,9 +1,7 @@
-﻿using ClientServer;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using Tajlo4ekUtils;
-using Utils;
 using MessageType = LauncherUtils.Messages.MessageType;
 
 
@@ -23,7 +21,7 @@ namespace LauncherServer
             if (IPAddress.TryParse(config.ServerIp, out IPAddress ipAddr))
             {
                 server = new ClientServer.Server<MessageType>(ipAddr, config.ServerPort);
-                server.onGetMessage += OnGetMessageUser;
+                server.OnGetMessage += OnGetMessageUser;
                 server.SetWorkPath(config.ProgramPath);
                 server.Start();
             }

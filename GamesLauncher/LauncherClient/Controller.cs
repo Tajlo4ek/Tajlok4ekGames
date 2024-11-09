@@ -7,7 +7,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using Tajlo4ekUtils;
-using Utils;
 using static LauncherUtils.Messages;
 
 namespace LauncherClient
@@ -26,7 +25,7 @@ namespace LauncherClient
         public Action<ProgressFileData> OnFileLoadProgress
         {
             get { return client.OnFileLoadProgress; }
-            set { client.OnFileLoadProgress += value; }
+            set { client.OnFileLoadProgress = value; }
         }
         public Action OnError;
 
@@ -43,10 +42,10 @@ namespace LauncherClient
             {
                 client = new ClientServer.Client<MessageType>(ipAddr, config.ServerPort);
                 client.OnGetMessage += OnGetMessageUser;
-                client.onErrorAction += OnServerError;
+                client.OnErrorAction += OnServerError;
 
                 client.SetWorkPath(config.ProgramPath);
-                client.OnServerConnected += OnServerConnected;
+                client.NewConnectAction += OnServerConnected;
             }
 
             OnFileLoadProgress += FileLoadCallback;
@@ -122,7 +121,7 @@ namespace LauncherClient
             }
         }
 
-        private void OnServerConnected()
+        private void OnServerConnected(string token)
         {
             AddMessageForServer(ClientServer.Message<MessageType>.GeneralMessageType.User,
                            MessageType.GetInfo);
@@ -200,6 +199,7 @@ namespace LauncherClient
                     needDownloadFiles[appName].Add(fileName);
 
                     countNeedLoad++;
+
                     AddMessageForServer(
                         ClientServer.Message<MessageType>.GeneralMessageType.FileProgress,
                         MessageType.None,

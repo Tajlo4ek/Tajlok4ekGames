@@ -135,7 +135,7 @@ namespace ClientServer
                         string fileName = message.GetData<string>("fileName");
                         SendFile(message.TokenFrom, fileName);
                     }
-                    break;
+                    return;
 
                 case Message<TUserCommand>.FileProgressMessageType.RecvFilesProgress:
                     {
@@ -169,13 +169,10 @@ namespace ClientServer
                             reply.Add("fileToken", fileToken)
                                  .Add("type", Message<TUserCommand>.FileProgressMessageType.FileNotExist);
                         }
-                    }
-                    break;
 
-                case Message<TUserCommand>.FileProgressMessageType.FileNotExist:
-                    {
-                        return;
+                        SendMessage(reply);
                     }
+                    return;
 
                 case Message<TUserCommand>.FileProgressMessageType.FileSended:
                     {
@@ -212,8 +209,9 @@ namespace ClientServer
                             reply.Add("fileToken", fileToken)
                                  .Add("type", Message<TUserCommand>.FileProgressMessageType.RecvFilesProgress);
                         }
+                        SendMessage(reply);
                     }
-                    break;
+                    return;
 
                 case Message<TUserCommand>.FileProgressMessageType.SendFile:
                     {
@@ -226,11 +224,12 @@ namespace ClientServer
 
                         reply.Add("fileToken", fileToken)
                              .Add("type", Message<TUserCommand>.FileProgressMessageType.RecvFilesProgress);
+
+                        SendMessage(reply);
                     }
-                    break;
+                    return;
             }
 
-            SendMessage(reply);
         }
 
         private void UpdateAlive(string token)
@@ -437,7 +436,7 @@ namespace ClientServer
         private void Log(Message<TUserCommand> message, bool recv)
         {
             if (message.MessageType == Message<TUserCommand>.GeneralMessageType.Ping
-                || message.MessageType == Message<TUserCommand>.GeneralMessageType.FileProgress)
+               /* || message.MessageType == Message<TUserCommand>.GeneralMessageType.FileProgress*/)
             {
                 return;
             }
@@ -448,7 +447,7 @@ namespace ClientServer
         private void Log(string text)
         {
             Console.WriteLine((this is Client<TUserCommand> ? "[client] " : "[server] ") + text);
-        }        
+        }
 #endif
 
     }

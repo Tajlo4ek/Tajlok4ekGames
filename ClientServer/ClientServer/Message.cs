@@ -22,16 +22,18 @@ namespace ClientServer
 
         public enum FileProgressMessageType
         {
-            GetFile = 0,
-            SendFile = 1,
+            Error = 0,
 
-            SendFilesProgress = 2,
-            RecvFilesProgress = 3,
+            GetFile = 1,
+            SendFile = 2,
 
-            FileReceived = 4,
-            FileSended = 5,
+            SendFilesProgress = 3,
+            RecvFilesProgress = 4,
 
-            FileNotExist = 6,
+            FileReceived = 5,
+            FileSended = 6,
+
+            FileNotExist = 7,
         };
 
         [JsonPropertyName("command")]
