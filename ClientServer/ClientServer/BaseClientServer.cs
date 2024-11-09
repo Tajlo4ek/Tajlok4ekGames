@@ -41,9 +41,7 @@ namespace ClientServer
         private readonly bool isServer;
 
         private readonly AsyncQueue<Message<TUserCommand>> recvMessageQueue;
-
         private readonly ConcurrentDictionary<string, AsyncQueue<Message<TUserCommand>>> sendMessageQueue;
-
         private readonly ConcurrentDictionary<CancellationTokenSource, Task> tasks;
 
         private class Connection
@@ -309,7 +307,9 @@ namespace ClientServer
         private void CheckRecvMessage(Message<TUserCommand> message)
         {
             UpdateAlive(message.TokenFrom);
+#if DEBUG
             Log(message, true);
+#endif
 
             if (message.MessageType == Message<TUserCommand>.GeneralMessageType.Close)
             {
@@ -350,7 +350,9 @@ namespace ClientServer
                 {
                     var message = await queue.DequeueAsync();
                     await Utils.SendPackageAsync(socket, message.GetJson());
+#if DEBUG
                     Log(message, false);
+#endif
                 }
             }
             catch (Exception ex)
@@ -401,7 +403,9 @@ namespace ClientServer
         protected void OnError(string token, Socket socket, Exception ex)
         {
             socket?.Shutdown(SocketShutdown.Both);
+#if DEBUG
             Log("error " + ex.ToString() + " \n" + ex.StackTrace);
+#endif
             OnErrorAction?.Invoke(ex, token);
         }
 
@@ -428,9 +432,10 @@ namespace ClientServer
             }
         }
 
+#if DEBUG
+
         private void Log(Message<TUserCommand> message, bool recv)
         {
-
             if (message.MessageType == Message<TUserCommand>.GeneralMessageType.Ping
                 || message.MessageType == Message<TUserCommand>.GeneralMessageType.FileProgress)
             {
@@ -443,7 +448,8 @@ namespace ClientServer
         private void Log(string text)
         {
             Console.WriteLine((this is Client<TUserCommand> ? "[client] " : "[server] ") + text);
-        }
+        }        
+#endif
 
     }
 }
