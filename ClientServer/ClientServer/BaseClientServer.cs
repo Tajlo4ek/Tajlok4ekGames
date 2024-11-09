@@ -1,10 +1,11 @@
 ﻿using ClientServer.FileUtils;
+using Microsoft.VisualStudio.Threading;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,7 +17,7 @@ namespace ClientServer
         protected readonly Tajlo4ekUtils.AtomicValue<string> Token = new Tajlo4ekUtils.AtomicValue<string>("");
         protected readonly Tajlo4ekUtils.AtomicValue<bool> _needStop = new Tajlo4ekUtils.AtomicValue<bool>(false);
 
-        protected bool NeedStop { get { return _needStop.Value; } }
+        private bool NeedStop { get { return _needStop.Value; } }
 
         public string MyToken { get { return Token.Value; } }
 
@@ -28,7 +29,7 @@ namespace ClientServer
 
         public Action<Message<TUserCommand>> OnGetMessage;
 
-        protected Action<string, Socket, AutoResetEvent> InternalNewConnectAction;
+        protected Action<string, Socket> InternalNewConnectAction;
         public Action<string> NewConnectAction;
 
         public Action<ProgressFileData> OnFileLoadProgress
@@ -40,8 +41,11 @@ namespace ClientServer
         private string workPath;
         private readonly bool isServer;
 
-        private readonly ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>> sendMessageQueue;
-        private readonly ConcurrentQueueWithSignal<Message<TUserCommand>> recvMessageQueue;
+        private readonly AsyncQueue<Message<TUserCommand>> recvMessageQueue;
+
+        private readonly ConcurrentDictionary<string, AsyncQueue<Message<TUserCommand>>> sendMessageQueue;
+
+        private readonly ConcurrentDictionary<CancellationTokenSource, Task> tasks;
 
         private class Connection
         {
@@ -78,14 +82,24 @@ namespace ClientServer
             ipEndPoint = new IPEndPoint(ipAddr, port);
             mainSocket = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-            sendMessageQueue = new ConcurrentDictionary<string, ConcurrentQueueWithSignal<Message<TUserCommand>>>();
+
+            tasks = new ConcurrentDictionary<CancellationTokenSource, Task>();
+            sendMessageQueue = new ConcurrentDictionary<string, AsyncQueue<Message<TUserCommand>>>();
             sendRecvController = new SendRecvController();
 
             connections = new ConcurrentDictionary<string, Connection>();
-            recvMessageQueue = new ConcurrentQueueWithSignal<Message<TUserCommand>>();
+            recvMessageQueue = new AsyncQueue<Message<TUserCommand>>();
             this.isServer = isServer;
 
-            new Task(CheckRecvMessageThread).Start();
+
+            RegNewTask(async () => await CheckRecvMessageAsync());
+            RegNewTask(async () => await PingWorkAsync());
+        }
+
+        protected void RegNewTask(Func<Task> task)
+        {
+            var cancelToken = new CancellationTokenSource();
+            tasks.TryAdd(cancelToken, Task.Run(task, cancelToken.Token));
         }
 
         public void SendFile(string tokenTo, string fileName)
@@ -96,7 +110,7 @@ namespace ClientServer
 
             if (File.Exists(path))
             {
-                var length = Utils.GetFileSize(path);
+                var length = Tajlo4ekUtils.FileUtils.GetFileSize(path);
 
                 var fileToken = sendRecvController.AddSendFile(tokenTo, path);
 
@@ -147,6 +161,11 @@ namespace ClientServer
                                 reply.Add("fileToken", fileToken)
                                      .Add("type", Message<TUserCommand>.FileProgressMessageType.FileSended);
                             }
+
+                            if (file.Sended)
+                            {
+                                sendRecvController.RemoveSendingFile(message.TokenFrom, fileToken);
+                            }
                         }
                         else
                         {
@@ -180,7 +199,7 @@ namespace ClientServer
                                 State = ProgressFileData.States.Error
                             });
                         }
-                        sendRecvController.RemoveSendingFile(message.TokenFrom, fileToken);
+                        sendRecvController.RemoveRecvingFile(message.TokenFrom, fileToken);
                     }
                     return;
 
@@ -192,11 +211,6 @@ namespace ClientServer
                         if (sendRecvController.TryGetReceivingFile(message.TokenFrom, fileToken, out ReceivingFile file))
                         {
                             file.AddBytes(filePart.Data, filePart.Available);
-
-                            if (file.IsWrited)
-                            {
-                                sendRecvController.RemoveRecvingFile(message.TokenFrom, fileToken);
-                            }
 
                             reply.Add("fileToken", fileToken)
                                  .Add("type", Message<TUserCommand>.FileProgressMessageType.RecvFilesProgress);
@@ -230,88 +244,77 @@ namespace ClientServer
             }
         }
 
-        private AutoResetEvent RegNewToken(string token)
+        private void RegNewToken(string token)
         {
             if (sendMessageQueue.ContainsKey(token) == false)
             {
-                sendMessageQueue.TryAdd(token, new ConcurrentQueueWithSignal<Message<TUserCommand>>());
+                sendMessageQueue.TryAdd(token, new AsyncQueue<Message<TUserCommand>>());
             }
 
-            return sendMessageQueue[token].SignalEvent;
+            connections.TryAdd(token, new Connection(MyToken, token));
         }
 
         public void SendMessage(Message<TUserCommand> message)
         {
-            if (sendMessageQueue.TryGetValue(message.TokenTo, out ConcurrentQueueWithSignal<Message<TUserCommand>> item))
+            if (sendMessageQueue.TryGetValue(message.TokenTo, out AsyncQueue<Message<TUserCommand>> item))
             {
-                item.Enqueue(message);
+                if (item.IsCompleted == false)
+                {
+                    item.Enqueue(message);
+                }
             }
         }
 
-        private bool TryGetMessageForToken(string token, out Message<TUserCommand> message)
+        private async Task PingWorkAsync()
         {
-            message = default;
-
-            if (sendMessageQueue.TryGetValue(token, out ConcurrentQueueWithSignal<Message<TUserCommand>> item) == false)
+            while (NeedStop == false)
             {
-                return false;
-            }
-
-            if (item.IsEmpty == false)
-            {
-                return item.TryDequeue(out message);
-            }
-            else
-            {
-                if (connections.ContainsKey(token) == false)
+                foreach (var connection in connections)
                 {
-                    connections.TryAdd(token, new Connection(MyToken, token));
-                }
+                    var token = connection.Key;
+                    var value = connection.Value;
 
-                if (connections.TryGetValue(token, out Connection connection))
-                {
-                    if (DateTime.Now > connection.CloseConnectionTime)
+                    if (DateTime.Now > value.NextSendPingTime)
                     {
-                        throw new Exception("connection timeout");
+                        value.UpdatePingTime();
+                        SendMessage(value.PingMessage);
                     }
 
-                    if (DateTime.Now > connection.NextSendPingTime)
+                    if (DateTime.Now > value.CloseConnectionTime)
                     {
-                        connection.UpdatePingTime();
-                        message = connection.PingMessage;
-                        return true;
+                        //TODO: remove token from all
+                        sendMessageQueue[token].Complete();
                     }
                 }
-            }
 
-            return false;
+                await Task.Delay(1000);
+            }
         }
 
-        private void CheckRecvMessageThread()
+        private async Task CheckRecvMessageAsync()
         {
-            while (true)
+            try
             {
-                recvMessageQueue.Wait();
-                while (recvMessageQueue.TryDequeue(out Message<TUserCommand> message))
+                while (true)
                 {
+                    var message = await recvMessageQueue.DequeueAsync();
                     CheckRecvMessage(message);
                 }
+            }
+            catch (Exception)
+            {
+                return;
             }
         }
 
         private void CheckRecvMessage(Message<TUserCommand> message)
         {
             UpdateAlive(message.TokenFrom);
+            Log(message, true);
 
             if (message.MessageType == Message<TUserCommand>.GeneralMessageType.Close)
             {
                 throw new Exception("close connection message");
-            }
-
-            if (message.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
-                && message.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
-            {
-                Log("recv: " + message.OrigData);
             }
 
             switch (message.MessageType)
@@ -330,42 +333,35 @@ namespace ClientServer
                         break;
                     }
 
-                    var sendEvent = RegNewToken(message.TokenFrom);
                     Token.Value = message.GetData<string>("token");
-                    InternalNewConnectAction?.Invoke(message.TokenFrom, mainSocket, sendEvent);
+                    RegNewToken(message.TokenFrom);
+                    InternalNewConnectAction?.Invoke(message.TokenFrom, mainSocket);
                     NewConnectAction?.Invoke(message.TokenFrom);
                     break;
             }
         }
 
-        protected void SendThread(Socket socket, string token, AutoResetEvent sendEvent)
+        protected async Task SendThreadAsync(Socket socket, string token)
         {
+            var queue = sendMessageQueue[token];
+
             try
             {
                 while (NeedStop == false)
                 {
-                    sendEvent.WaitOne(100);
-
-                    if (TryGetMessageForToken(token, out Message<TUserCommand> message))
-                    {
-                        Utils.SendPackage(socket, message.GetJson());
-
-                        if (message.MessageType != Message<TUserCommand>.GeneralMessageType.Ping
-                            && message.MessageType != Message<TUserCommand>.GeneralMessageType.FileProgress)
-                        {
-                            Log("send: " + message.GetJson());
-                        }
-                    }
+                    var message = await queue.DequeueAsync();
+                    await Utils.SendPackageAsync(socket, message.GetJson());
+                    Log(message, false);
                 }
-
             }
             catch (Exception ex)
             {
+                Console.WriteLine(DateTime.Now.ToString("ss:fff"));
                 OnError(token, socket, ex);
             }
         }
 
-        protected void RecvThread(Socket socket)
+        protected async Task RecvThreadAsync(Socket socket)
         {
             bool hasToken = false;
 
@@ -373,7 +369,7 @@ namespace ClientServer
             {
                 while (NeedStop == false)
                 {
-                    var bytes = Utils.GetPackage(socket);
+                    var bytes = await Utils.GetPackageAsync(socket);
                     var data = Encoding.UTF32.GetString(bytes);
                     var messageFrom = Message<TUserCommand>.FromJson(data);
 
@@ -387,10 +383,10 @@ namespace ClientServer
                         var ans = new Message<TUserCommand>(Token.Value, token, Message<TUserCommand>.GeneralMessageType.SendReg)
                             .Add("token", token);
 
-                        var sendEvent = RegNewToken(token);
+                        RegNewToken(token);
 
                         SendMessage(ans);
-                        InternalNewConnectAction?.Invoke(token, socket, sendEvent);
+                        InternalNewConnectAction?.Invoke(token, socket);
                         NewConnectAction?.Invoke(token);
                     }
 
@@ -424,6 +420,25 @@ namespace ClientServer
         {
             sendRecvController.Dispose();
             _needStop.Value = true;
+
+            recvMessageQueue.Complete();
+
+            foreach (var task in tasks)
+            {
+                task.Key.Cancel();
+            }
+        }
+
+        private void Log(Message<TUserCommand> message, bool recv)
+        {
+
+            if (message.MessageType == Message<TUserCommand>.GeneralMessageType.Ping
+                || message.MessageType == Message<TUserCommand>.GeneralMessageType.FileProgress)
+            {
+                return;
+            }
+
+            Log((recv ? "recv " : "send ") + message.GetJson());
         }
 
         private void Log(string text)

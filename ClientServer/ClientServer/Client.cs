@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.VisualStudio.Threading;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -16,10 +17,10 @@ namespace ClientServer
         public Client(IPAddress ip, int port = Utils.defaultPort)
             : base(ip, port, false)
         {
-            InternalNewConnectAction += (token, socket, sendEvent) =>
+            InternalNewConnectAction += (token, socket) =>
             {
                 serverToken.Value = token;
-                new Task(() => SendThread(socket, token, sendEvent)).Start();
+                RegNewTask(async () => await SendThreadAsync(socket, token));
             };
         }
 
@@ -30,7 +31,7 @@ namespace ClientServer
                 base.Start();
                 mainSocket.Connect(ipEndPoint);
 
-                new Task(() => RecvThread(mainSocket)).Start();
+                RegNewTask(async () => await RecvThreadAsync(mainSocket));
 
 
                 var startMessage = new Message<TUserCommand>("", "", Message<TUserCommand>.GeneralMessageType.GetReg);

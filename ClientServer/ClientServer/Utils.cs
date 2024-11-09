@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ClientServer
 {
@@ -38,35 +40,56 @@ namespace ClientServer
 
         public const int defaultPort = 35124;
 
-        private static byte[] RecvCount(Socket socket, int count, int timeout)
+        private static Task<int> ReceiveAsync(this Socket socket, byte[] buffer, int offset, int size, SocketFlags socketFlags)
         {
-            socket.ReceiveTimeout = timeout;
-
-            var buffer = new byte[count];
-            int totalRecv = 0;
-
-            while (totalRecv != count)
+            var tcs = new TaskCompletionSource<int>();
+            socket.BeginReceive(buffer, offset, size, socketFlags, ar =>
             {
-                var recvCount = socket.Receive(buffer, totalRecv, count - totalRecv, SocketFlags.None);
-                totalRecv += recvCount;
-            }
-
-            return buffer;
+                try { tcs.TrySetResult(socket.EndReceive(ar)); }
+                catch (Exception e) { tcs.TrySetException(e); }
+            }, state: null);
+            return tcs.Task;
         }
 
-        internal static byte[] GetPackage(Socket socket, int timeout = 5000)
+        public static async Task<byte[]> RecvCountAsync(Socket socket, int count)
         {
-            var recvBytes = RecvCount(socket, Utils.numCount, timeout);
+            byte[] ret = new byte[count];
+
+            int totalRecv = 0;
+            while (totalRecv != count)
+            {
+                totalRecv += await socket.ReceiveAsync(ret, totalRecv, ret.Length - totalRecv, SocketFlags.None);
+            }
+            return ret;
+        }
+
+        internal static async Task<byte[]> GetPackageAsync(Socket socket)
+        {
+            var recvBytes = await RecvCountAsync(socket, Utils.numCount);
             int needCount = int.Parse(Encoding.UTF8.GetString(recvBytes));
 
-            return RecvCount(socket, needCount, timeout);
+            return await RecvCountAsync(socket, needCount);
+        }
+
+        private static IList<ArraySegment<byte>> PrepareDataForSend(string data)
+        {
+            var bytes = Encoding.UTF32.GetBytes(AddChar(data, Utils.numCount));
+            var preSendBytes = Encoding.UTF8.GetBytes(AddChar(bytes.Length.ToString(), Utils.numCount));
+
+            return new List<ArraySegment<byte>> {
+                new ArraySegment<byte>(preSendBytes),
+                new ArraySegment<byte>(bytes)
+            };
         }
 
         internal static void SendPackage(Socket socket, string data)
         {
-            var bytes = Encoding.UTF32.GetBytes(AddChar(data, Utils.numCount));
-            socket.Send(Encoding.UTF8.GetBytes(AddChar(bytes.Length.ToString(), Utils.numCount)));
-            socket.Send(bytes);
+            socket.Send(PrepareDataForSend(data));
+        }
+
+        internal static async Task SendPackageAsync(Socket socket, string data)
+        {
+            await socket.SendAsync(PrepareDataForSend(data), SocketFlags.None);
         }
 
         private static string AddChar(string str, int count)
@@ -76,12 +99,6 @@ namespace ClientServer
 
             return str;
         }
-
-        internal static long GetFileSize(string path)
-        {
-            return new FileInfo(path).Length;
-        }
-
 
     }
 }

@@ -5,7 +5,7 @@ namespace ClientServer.FileUtils
 {
     internal class SendRecvController : IDisposable
     {
-        private readonly int partSize = 1024 * 4;
+        private readonly int partSize = 1024 * 16;
 
         private readonly object _lock = new object();
         private readonly Dictionary<string, List<SendingFile>> sendFiles;

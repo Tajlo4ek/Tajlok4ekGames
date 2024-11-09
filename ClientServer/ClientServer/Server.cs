@@ -16,9 +16,9 @@ namespace ClientServer
         {
             Token.Value = TokenGenerator.Generate();
 
-            InternalNewConnectAction = (token, socket, sendEvent) =>
+            InternalNewConnectAction = (token, socket) =>
             {
-                new Task(() => SendThread(socket, token, sendEvent)).Start();
+                RegNewTask(async () => await SendThreadAsync(socket, token));
             };
         }
 
@@ -52,7 +52,7 @@ namespace ClientServer
             if (result != null)
             {
                 Socket handler = mainSocket.EndAccept(result);
-                new Task(() => RecvThread(handler)).Start();
+                RegNewTask(async () => await RecvThreadAsync(handler));
             }
 
             mainSocket.BeginAccept(AcceptCallback, null);

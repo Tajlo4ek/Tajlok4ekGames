@@ -101,6 +101,11 @@ namespace Tajlo4ekUtils
 
             File.Move(oldPath, newPath);
         }
+
+        public static long GetFileSize(string path)
+        {
+            return new FileInfo(path).Length;
+        }
     }
 
 }
